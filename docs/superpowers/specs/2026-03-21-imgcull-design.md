@@ -17,6 +17,7 @@ Monolithic pipeline with a single async binary:
 ```
 CLI (clap)
   → File Discovery (walk paths, filter by extension)
+  → Image Preprocessor (extract JPEG preview from RAW, resize if needed)
   → Metadata Reader (check existing XMP sidecars, decide what work is needed)
   → Concurrency Controller (tokio semaphore, bounded to --concurrency N)
   → LLM Provider via Rig (Claude / OpenAI / Ollama)
@@ -25,19 +26,19 @@ CLI (clap)
 
 ### LLM Provider Layer (Rig)
 
-The tool uses the `rig-core` crate to abstract over LLM providers. Two Rig agents are built at startup:
+The tool uses the `rig-core` crate to abstract over LLM providers. Two Rig components are built at startup:
 
-- **Description agent**: configured from `description_provider` in config, with a preamble tuned for scene description
-- **Scoring agent**: configured from `scoring_provider` in config, with a preamble tuned for quality evaluation and structured JSON output
+- **Description agent**: a Rig `Agent` configured from `description_provider` in config, with a preamble tuned for scene description. Returns free-text via the `Prompt` trait.
+- **Scoring extractor**: a Rig `Extractor<ScoringResult>` configured from `scoring_provider` in config. Uses a `#[derive(JsonSchema, Deserialize)]` struct to get typed, validated output directly from the LLM's structured output mode. This eliminates most JSON parsing failures.
 
-**Same-provider optimization**: if both agents use the same provider and model, a single combined agent is built instead, making one LLM request per image (saving tokens and latency). When providers differ, two separate requests are made per image.
+Each image always makes two LLM requests: one for description, one for scoring. This keeps the architecture simple and allows each task to use a different provider/model. The concurrency controller ensures total parallelism stays bounded regardless.
 
 ### Concurrency and Resilience
 
 - Configurable concurrency via `--concurrency N` (default: 4), implemented with a `tokio::sync::Semaphore`
 - Automatic retry with exponential backoff on rate limits (429): max 3 retries, 1s → 2s → 4s
 - Other API errors: retry once, then warn and skip
-- Invalid JSON from LLM: retry once with stricter prompt, then warn and skip
+- Scoring extractor parse failure: retry once, then warn and skip (structured output makes this rare)
 - Batch-resilient: a single image failure never stops the run
 
 ## Supported Formats
@@ -47,9 +48,19 @@ The tool uses the `rig-core` crate to abstract over LLM providers. Two Rig agent
 
 Unsupported extensions are warned and skipped. Expandable to PNG/WebP/HEIC in the future.
 
+### Image Preprocessing
+
+Vision LLM APIs accept JPEG/PNG/WebP but not RAW formats. Before sending to the LLM:
+
+1. **RAW files**: Extract the embedded JPEG preview (most RAW formats contain a full-resolution JPEG preview). Use the `kamadak-exif` crate to locate and extract it. If no preview is found, warn and skip the image.
+2. **All files**: Check the image dimensions. If either dimension exceeds 2048px, resize to fit within 2048x2048 (preserving aspect ratio) before base64 encoding. This keeps within LLM size limits and reduces token costs. Use the `image` crate for resizing.
+3. **Base64 encode** the resulting JPEG for the LLM request.
+
+The preprocessing happens once per image and the result is reused for both the description and scoring requests.
+
 ## XMP Sidecar Format
 
-Each processed image gets a sidecar file alongside it. For `IMG_1234.jpg`, the sidecar is `IMG_1234.jpg.xmp`.
+Each processed image gets a sidecar file alongside it, named by replacing the original extension with `.xmp`. For `IMG_1234.jpg`, the sidecar is `IMG_1234.xmp`. For `IMG_5678.CR2`, the sidecar is `IMG_5678.xmp`. This matches Lightroom Classic's sidecar naming convention.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -99,7 +110,7 @@ Each processed image gets a sidecar file alongside it. For `IMG_1234.jpg`, the s
 |-------|-----------|---------|
 | `dc:description` | Dublin Core (standard) | Scene description. Lightroom displays this in the Metadata panel. Skipped if already present (unless `--force`). |
 | `xmp:Rating` | XMP Core (standard) | 1–5 star rating mapped from overall score. Enabled by default, disable with `--no-rating`. |
-| `imgcull:score` | Custom | Overall quality score 0.0–1.0 (weighted average of dimensions). |
+| `imgcull:score` | Custom | Overall quality score 0.0–1.0 (equal-weighted average of enabled dimensions). |
 | `imgcull:sharpness` | Custom | Focus quality, motion blur, camera shake. |
 | `imgcull:exposure` | Custom | Exposure accuracy, blown highlights, crushed shadows. |
 | `imgcull:composition` | Custom | Framing, rule of thirds, leading lines, balance. |
@@ -138,11 +149,11 @@ scoring_provider = "claude"
 set_rating = true
 
 [providers.claude]
-api_key = "sk-ant-..."
+api_key = "sk-ant-..."       # Optional: if omitted, reads ANTHROPIC_API_KEY env var
 model = "claude-sonnet-4-20250514"
 
 [providers.openai]
-api_key = "sk-..."
+api_key = "sk-..."            # Optional: if omitted, reads OPENAI_API_KEY env var
 model = "gpt-4o"
 
 [providers.ollama]
@@ -158,36 +169,22 @@ dimensions = ["sharpness", "exposure", "composition", "subject_clarity", "aesthe
 Location: `~/.config/imgcull/prompts.toml`
 
 ```toml
-[combined]
-system = "You are an expert photography critic."
-template = """
-Analyze this image and return a JSON object with the following structure:
-
-{
-  "description": "A concise scene description (1-3 sentences). Describe the subject, setting, lighting, and mood.",
-  "scores": {
-    {{dimensions}}
-  }
-}
-
-Scoring guidelines:
-{{guidelines}}
-
-Return ONLY valid JSON, no markdown fencing, no explanation.
-"""
-
-[description_only]
+[description]
 system = "You are a concise photography describer."
 template = """
 Describe this photograph in 1-3 sentences. Include the subject, setting,
 lighting conditions, and mood. Be concise and factual.
 """
 
-[scoring_only]
+[scoring]
 system = "You are an expert photography critic."
 template = """
-Analyze this image and return quality scores as JSON.
-{{scoring_section}}
+Analyze this image and score it on the following dimensions (each 0.0 to 1.0):
+
+{{dimensions}}
+
+Scoring guidelines:
+{{guidelines}}
 """
 
 [guidelines]
@@ -199,6 +196,8 @@ aesthetics = "Overall emotional impact, mood, storytelling, wow factor."
 ```
 
 `{{dimensions}}` and `{{guidelines}}` placeholders are filled at runtime based on which dimensions are enabled. Users can fully customize prompts. A `--prompts <PATH>` CLI flag allows pointing to an alternative prompts file.
+
+Note: The scoring prompt does not need to request JSON output explicitly — Rig's `Extractor<ScoringResult>` handles structured output via the provider's native JSON schema mode. The prompt focuses on guiding the LLM's evaluation criteria, not its output format.
 
 ### Precedence
 
@@ -230,7 +229,8 @@ Options:
   -V, --version                  Print version
 
 imgcull describe [OPTIONS] <PATHS>...
-  (Same options as score, but only generates descriptions — no scoring)
+  (Same options as score, but only generates descriptions — no scoring,
+   no star rating, no imgcull:* fields written. Only writes dc:description.)
 
 imgcull init
   (Creates default config.toml and prompts.toml at ~/.config/imgcull/)
@@ -257,7 +257,7 @@ The log file captures full LLM request/response payloads at DEBUG level, useful 
 | File not readable (permissions, corrupt) | Warn and skip |
 | LLM rate limit (429) | Retry with exponential backoff (max 3 retries, 1s → 2s → 4s) |
 | LLM API error (500, timeout) | Retry once, then warn and skip |
-| LLM returns invalid JSON | Retry once with stricter prompt, then warn and skip |
+| Scoring extractor parse failure | Retry once, then warn and skip (rare with structured output) |
 | Score out of range | Clamp to 0.0–1.0, log warning |
 | XMP sidecar write failure | Error and skip (print LLM JSON to stderr to avoid data loss) |
 | Existing sidecar parse failure | Warn, write new sidecar (no merge) |
@@ -283,11 +283,14 @@ imgcull: 187/200 images processed
 | `rig-core` | LLM provider abstraction (Claude, OpenAI, Ollama) |
 | `clap` (derive) | CLI argument parsing |
 | `tokio` | Async runtime for concurrent processing |
-| `serde` / `serde_json` | JSON serialization for LLM responses |
+| `serde` / `serde_json` | JSON serialization for LLM responses and config |
+| `schemars` | JSON Schema derivation for Rig's `Extractor<T>` |
 | `toml` | Config and prompts file parsing |
 | `xmp_toolkit` or `quick-xml` | XMP sidecar read/write/merge |
 | `indicatif` | Progress bars and spinners |
 | `base64` | Image encoding for LLM vision APIs |
+| `image` | Image resizing for LLM size limits (max 2048px) |
+| `kamadak-exif` | Extract embedded JPEG preview from RAW files |
 | `anyhow` | Application-level error handling |
 | `tracing` / `tracing-subscriber` / `tracing-appender` | Structured logging with multi-output support |
 | `dirs` | Platform-appropriate config directory resolution |
