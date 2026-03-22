@@ -20,7 +20,7 @@ CLI (clap)
   → Image Preprocessor (extract JPEG preview from RAW, resize if needed)
   → Metadata Reader (check existing XMP sidecars, decide what work is needed)
   → Concurrency Controller (tokio semaphore, bounded to --concurrency N)
-  → LLM Provider via Rig (Claude / OpenAI / Ollama)
+  → LLM Provider via Rig (Claude / OpenAI / Gemini / DeepSeek / Ollama)
   → XMP Sidecar Writer (write/merge .xmp files)
 ```
 
@@ -96,7 +96,7 @@ Each processed image gets a sidecar file alongside it, named by replacing the or
 
       <!-- Metadata about the scoring run -->
       <imgcull:scored_at>2026-03-21T16:30:00Z</imgcull:scored_at>
-      <imgcull:scored_by>claude/claude-sonnet-4-20250514</imgcull:scored_by>
+      <imgcull:scored_by>claude/claude-sonnet-4-6-20250514</imgcull:scored_by>
       <imgcull:dimensions>sharpness,exposure,composition,subject_clarity,aesthetics</imgcull:dimensions>
 
     </rdf:Description>
@@ -134,6 +134,7 @@ Each processed image gets a sidecar file alongside it, named by replacing the or
 
 - If a sidecar already exists (e.g., created by Lightroom), `imgcull` merges its fields into the existing file rather than overwriting.
 - If an existing sidecar is malformed XML, a warning is logged and a new sidecar is written (no merge attempted).
+- **Backup**: When `--backup` is passed, `imgcull` copies the existing sidecar to `<name>.xmp.bak` before making any changes. If a `.bak` file already exists, it is overwritten (only the most recent backup is kept).
 
 ## Configuration
 
@@ -147,14 +148,23 @@ concurrency = 4
 description_provider = "claude"
 scoring_provider = "claude"
 set_rating = true
+backup = false
 
 [providers.claude]
-api_key = "sk-ant-..."       # Optional: if omitted, reads ANTHROPIC_API_KEY env var
-model = "claude-sonnet-4-20250514"
+model = "claude-sonnet-4-6-20250514"
+api_key_env = "ANTHROPIC_API_KEY"    # Env var name to read (default for Claude)
 
 [providers.openai]
-api_key = "sk-..."            # Optional: if omitted, reads OPENAI_API_KEY env var
-model = "gpt-4o"
+model = "gpt-5.4"
+api_key_env = "OPENAI_API_KEY"       # Env var name to read (default for OpenAI)
+
+[providers.gemini]
+model = "gemini-3.1-pro"
+api_key_env = "GEMINI_API_KEY"       # Env var name to read (default for Gemini)
+
+[providers.deepseek]
+model = "deepseek-v3"
+api_key_env = "DEEPSEEK_API_KEY"     # Env var name to read (default for DeepSeek)
 
 [providers.ollama]
 base_url = "http://localhost:11434"
@@ -199,6 +209,16 @@ aesthetics = "Overall emotional impact, mood, storytelling, wow factor."
 
 Note: The scoring prompt does not need to request JSON output explicitly — Rig's `Extractor<ScoringResult>` handles structured output via the provider's native JSON schema mode. The prompt focuses on guiding the LLM's evaluation criteria, not its output format.
 
+### API Key Resolution
+
+API keys are never stored in the config file. Resolution order:
+
+1. **Environment variable** — read the var named in `api_key_env` (or the provider's default: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)
+2. **`.env` file** — if the env var is not set, `imgcull` loads `.env` from the current working directory (via the `dotenvy` crate). This lets photographers keep a `.env` next to their image folders.
+3. **Missing key** — hard error before processing starts, with a message naming the expected env var.
+
+The `imgcull init` command generates a `.env.example` file alongside the config files as a reminder.
+
 ### Precedence
 
 CLI flag > config file > built-in default.
@@ -219,6 +239,7 @@ Options:
   --dimensions <LIST>            Comma-separated dimensions to score
   --no-description               Skip description generation
   --no-rating                    Don't write star rating to xmp:Rating
+  --backup                       Backup existing .xmp sidecars to .xmp.bak before modifying
   --force                        Re-process even if already scored/described
   --dry-run                      Show what would be processed without calling LLMs
   --log <PATH>                   Write detailed log to file
@@ -265,7 +286,7 @@ The log file captures full LLM request/response payloads at DEBUG level, useful 
 | Config file malformed | Hard error, exit with message |
 | Prompts file missing | Use built-in default prompts |
 | Prompts file malformed | Hard error, exit with message |
-| No API key for selected provider | Hard error before processing starts |
+| No API key for selected provider | Hard error before processing starts (names the expected env var) |
 
 ### End-of-Run Summary
 
@@ -280,7 +301,7 @@ imgcull: 187/200 images processed
 
 | Crate | Purpose |
 |-------|---------|
-| `rig-core` | LLM provider abstraction (Claude, OpenAI, Ollama) |
+| `rig-core` | LLM provider abstraction (Claude, OpenAI, Gemini, DeepSeek, Ollama) |
 | `clap` (derive) | CLI argument parsing |
 | `tokio` | Async runtime for concurrent processing |
 | `serde` / `serde_json` | JSON serialization for LLM responses and config |
@@ -293,6 +314,7 @@ imgcull: 187/200 images processed
 | `kamadak-exif` | Extract embedded JPEG preview from RAW files |
 | `anyhow` | Application-level error handling |
 | `tracing` / `tracing-subscriber` / `tracing-appender` | Structured logging with multi-output support |
+| `dotenvy` | Load `.env` files for API key resolution |
 | `dirs` | Platform-appropriate config directory resolution |
 
 ### XMP Library Decision
