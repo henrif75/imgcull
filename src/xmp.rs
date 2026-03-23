@@ -48,6 +48,13 @@ pub struct XmpSidecar {
     scored_by: Option<String>,
     /// Comma-separated list of scored dimensions.
     dimensions_list: Option<String>,
+    /// Whether any field has been modified since construction or last read.
+    ///
+    /// Used by the pipeline to skip writing when nothing has changed.
+    dirty: bool,
+    /// Raw file content read from disk, used to merge our fields into the
+    /// existing XML rather than regenerating the whole document from scratch.
+    raw_content: Option<String>,
 }
 
 impl XmpSidecar {
@@ -81,6 +88,9 @@ impl XmpSidecar {
         }
 
         let mut sidecar = Self::new();
+
+        // Store raw content for merge-on-write.
+        sidecar.raw_content = Some(content.clone());
 
         // Extract dc:description text via simple string searching.
         if let Some(start) = content.find("<rdf:li xml:lang=\"x-default\">") {
@@ -147,6 +157,13 @@ impl XmpSidecar {
         self.overall_score.is_some()
     }
 
+    /// Returns `true` if any field has been modified since construction or last read.
+    ///
+    /// Use this to skip writing the sidecar when nothing has changed.
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
     /// Returns the `dc:description` text, if any.
     pub fn description(&self) -> Option<&str> {
         self.description.as_deref()
@@ -155,6 +172,7 @@ impl XmpSidecar {
     /// Set the `dc:description` text.
     pub fn set_description(&mut self, desc: &str) {
         self.description = Some(desc.to_string());
+        self.dirty = true;
     }
 
     /// Store scoring results from an LLM evaluation.
@@ -172,6 +190,7 @@ impl XmpSidecar {
         self.scored_by = Some(scored_by.to_string());
         self.scored_at = Some(Utc::now().to_rfc3339());
         self.dimensions_list = Some(dims.join(","));
+        self.dirty = true;
 
         self.dimension_scores.clear();
         for dim in dims {
@@ -184,79 +203,249 @@ impl XmpSidecar {
     /// Set the XMP star rating (1–5).
     pub fn set_rating(&mut self, stars: u8) {
         self.rating = Some(stars);
+        self.dirty = true;
     }
 
-    /// Write the complete XMP document to disk with proper namespaces.
+    /// Write the XMP document to disk.
+    ///
+    /// If the sidecar was previously read from disk (i.e. `raw_content` is
+    /// set), the existing content is used as the base and only imgcull-managed
+    /// fields (`dc:description`, `xmp:Rating`, and all `imgcull:*` elements)
+    /// are replaced, preserving any other namespaces and fields written by
+    /// third-party tools such as Lightroom.
+    ///
+    /// If no existing content is available, a new document is generated from
+    /// scratch.
     pub fn write(&self, path: &Path) -> Result<()> {
-        let mut xml = String::new();
-        xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        xml.push_str("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n");
-        xml.push_str("  <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n");
-        xml.push_str("    <rdf:Description\n");
-        xml.push_str("      xmlns:dc=\"http://purl.org/dc/elements/1.1/\"\n");
-        xml.push_str("      xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"\n");
-        xml.push_str("      xmlns:imgcull=\"http://imgcull.dev/ns/1.0/\"");
-
-        if let Some(rating) = self.rating {
-            xml.push_str(&format!("\n      xmp:Rating=\"{rating}\""));
-        }
-
-        xml.push_str(">\n");
-
-        // dc:description
-        if let Some(ref desc) = self.description {
-            let escaped = escape(desc);
-            xml.push_str("      <dc:description>\n");
-            xml.push_str("        <rdf:Alt>\n");
-            xml.push_str(&format!(
-                "          <rdf:li xml:lang=\"x-default\">{escaped}</rdf:li>\n"
-            ));
-            xml.push_str("        </rdf:Alt>\n");
-            xml.push_str("      </dc:description>\n");
-        }
-
-        // imgcull:score
-        if let Some(score) = self.overall_score {
-            xml.push_str(&format!(
-                "      <imgcull:score>{score:.2}</imgcull:score>\n"
-            ));
-        }
-
-        // Per-dimension scores
-        for (name, val) in &self.dimension_scores {
-            xml.push_str(&format!(
-                "      <imgcull:{name}>{val:.2}</imgcull:{name}>\n"
-            ));
-        }
-
-        // imgcull:scored_at
-        if let Some(ref ts) = self.scored_at {
-            xml.push_str(&format!(
-                "      <imgcull:scored_at>{ts}</imgcull:scored_at>\n"
-            ));
-        }
-
-        // imgcull:scored_by
-        if let Some(ref model) = self.scored_by {
-            xml.push_str(&format!(
-                "      <imgcull:scored_by>{model}</imgcull:scored_by>\n"
-            ));
-        }
-
-        // imgcull:dimensions
-        if let Some(ref dims) = self.dimensions_list {
-            xml.push_str(&format!(
-                "      <imgcull:dimensions>{dims}</imgcull:dimensions>\n"
-            ));
-        }
-
-        xml.push_str("    </rdf:Description>\n");
-        xml.push_str("  </rdf:RDF>\n");
-        xml.push_str("</x:xmpmeta>\n");
+        let xml = if let Some(ref base) = self.raw_content {
+            merge_into_existing(base, self)
+        } else {
+            generate_from_scratch(self)
+        };
 
         fs::write(path, &xml).with_context(|| format!("writing XMP: {}", path.display()))?;
         Ok(())
     }
+}
+
+/// Build the imgcull fields fragment that is inserted into `<rdf:Description>`.
+fn build_imgcull_fields(sidecar: &XmpSidecar) -> String {
+    let mut fields = String::new();
+
+    // dc:description
+    if let Some(ref desc) = sidecar.description {
+        let escaped = escape(desc);
+        fields.push_str("      <dc:description>\n");
+        fields.push_str("        <rdf:Alt>\n");
+        fields.push_str(&format!(
+            "          <rdf:li xml:lang=\"x-default\">{escaped}</rdf:li>\n"
+        ));
+        fields.push_str("        </rdf:Alt>\n");
+        fields.push_str("      </dc:description>\n");
+    }
+
+    // imgcull:score
+    if let Some(score) = sidecar.overall_score {
+        fields.push_str(&format!(
+            "      <imgcull:score>{score:.2}</imgcull:score>\n"
+        ));
+    }
+
+    // Per-dimension scores
+    for (name, val) in &sidecar.dimension_scores {
+        fields.push_str(&format!(
+            "      <imgcull:{name}>{val:.2}</imgcull:{name}>\n"
+        ));
+    }
+
+    // imgcull:scored_at
+    if let Some(ref ts) = sidecar.scored_at {
+        fields.push_str(&format!(
+            "      <imgcull:scored_at>{ts}</imgcull:scored_at>\n"
+        ));
+    }
+
+    // imgcull:scored_by
+    if let Some(ref model) = sidecar.scored_by {
+        fields.push_str(&format!(
+            "      <imgcull:scored_by>{model}</imgcull:scored_by>\n"
+        ));
+    }
+
+    // imgcull:dimensions
+    if let Some(ref dims) = sidecar.dimensions_list {
+        fields.push_str(&format!(
+            "      <imgcull:dimensions>{dims}</imgcull:dimensions>\n"
+        ));
+    }
+
+    fields
+}
+
+/// Generate an XMP document from scratch with all managed namespaces declared.
+fn generate_from_scratch(sidecar: &XmpSidecar) -> String {
+    let mut xml = String::new();
+    xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.push_str("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n");
+    xml.push_str("  <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n");
+    xml.push_str("    <rdf:Description\n");
+    xml.push_str("      xmlns:dc=\"http://purl.org/dc/elements/1.1/\"\n");
+    xml.push_str("      xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"\n");
+    xml.push_str("      xmlns:imgcull=\"http://imgcull.dev/ns/1.0/\"");
+
+    if let Some(rating) = sidecar.rating {
+        xml.push_str(&format!("\n      xmp:Rating=\"{rating}\""));
+    }
+
+    xml.push_str(">\n");
+    xml.push_str(&build_imgcull_fields(sidecar));
+    xml.push_str("    </rdf:Description>\n");
+    xml.push_str("  </rdf:RDF>\n");
+    xml.push_str("</x:xmpmeta>\n");
+    xml
+}
+
+/// Merge imgcull-managed fields into an existing XMP document string.
+///
+/// Preserves all content not managed by imgcull (e.g. Lightroom `lr:*`,
+/// `photoshop:*`, `tiff:*` fields).  The strategy is:
+///
+/// 1. Strip any existing `xmp:Rating` attribute from `<rdf:Description`.
+/// 2. Remove existing `<dc:description>` blocks and `<imgcull:*>` elements.
+/// 3. Inject the new imgcull fields just before `</rdf:Description>`.
+/// 4. Ensure the `xmlns:imgcull` namespace is declared on `<rdf:Description`.
+fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
+    let mut xml = base.to_string();
+
+    // --- Strip existing xmp:Rating attribute ---
+    xml = remove_attribute(&xml, "xmp:Rating");
+
+    // --- Inject xmp:Rating as an attribute if set ---
+    if let Some(rating) = sidecar.rating {
+        // Find the closing `>` of the opening <rdf:Description ... > tag.
+        // The tag may end with `>` or `/>`, but in our generated XML it always
+        // ends with `>`.  We search for the first `>` after `<rdf:Description`.
+        if let Some(desc_pos) = xml.find("<rdf:Description")
+            && let Some(rel_close) = xml[desc_pos..].find('>')
+        {
+            let close_pos = desc_pos + rel_close;
+            // Insert the attribute before the `>`.
+            let attr = format!("\n      xmp:Rating=\"{rating}\"");
+            xml.insert_str(close_pos, &attr);
+        }
+    }
+
+    // --- Remove existing dc:description block ---
+    xml = remove_element_block(&xml, "<dc:description>", "</dc:description>");
+
+    // --- Remove existing imgcull:* elements ---
+    // We iteratively remove any element whose tag starts with `<imgcull:`.
+    while let Some(start) = xml.find("<imgcull:") {
+        // Find the tag name to build the matching close tag.
+        let tag_start = start + 1; // skip '<'
+        let tag_end = xml[tag_start..]
+            .find(['>', ' ', '\n', '\r'])
+            .map(|p| tag_start + p)
+            .unwrap_or(xml.len());
+        let tag_name = xml[tag_start..tag_end].to_string();
+        let close = format!("</{tag_name}>");
+        let open_tag = xml[start..tag_end + 1].to_string();
+        xml = remove_element_block(&xml, &open_tag, &close);
+    }
+
+    // --- Ensure xmlns:imgcull is declared on <rdf:Description ---
+    if !xml.contains("xmlns:imgcull")
+        && let Some(desc_pos) = xml.find("<rdf:Description")
+        && let Some(rel_close) = xml[desc_pos..].find('>')
+    {
+        let close_pos = desc_pos + rel_close;
+        xml.insert_str(
+            close_pos,
+            "\n      xmlns:imgcull=\"http://imgcull.dev/ns/1.0/\"",
+        );
+    }
+
+    // --- Ensure xmlns:dc is declared when we have a description ---
+    if sidecar.description.is_some()
+        && !xml.contains("xmlns:dc")
+        && let Some(desc_pos) = xml.find("<rdf:Description")
+        && let Some(rel_close) = xml[desc_pos..].find('>')
+    {
+        let close_pos = desc_pos + rel_close;
+        xml.insert_str(
+            close_pos,
+            "\n      xmlns:dc=\"http://purl.org/dc/elements/1.1/\"",
+        );
+    }
+
+    // --- Ensure xmlns:xmp is declared when we have a rating ---
+    if sidecar.rating.is_some()
+        && !xml.contains("xmlns:xmp")
+        && let Some(desc_pos) = xml.find("<rdf:Description")
+        && let Some(rel_close) = xml[desc_pos..].find('>')
+    {
+        let close_pos = desc_pos + rel_close;
+        xml.insert_str(
+            close_pos,
+            "\n      xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"",
+        );
+    }
+
+    // --- Insert our new fields just before </rdf:Description> ---
+    let new_fields = build_imgcull_fields(sidecar);
+    if !new_fields.is_empty()
+        && let Some(close_pos) = xml.find("</rdf:Description>")
+    {
+        xml.insert_str(close_pos, &new_fields);
+    }
+
+    xml
+}
+
+/// Remove an XML element block identified by its literal open and close tags.
+///
+/// Strips any leading whitespace / newline before the open tag so that the
+/// surrounding indentation is not left dangling.
+fn remove_element_block(content: &str, open: &str, close: &str) -> String {
+    if let Some(start) = content.find(open)
+        && let Some(rel_end) = content[start..].find(close)
+    {
+        let end = start + rel_end + close.len();
+        // Also consume a trailing newline if present.
+        let end = if content[end..].starts_with('\n') {
+            end + 1
+        } else {
+            end
+        };
+        // Also strip the leading whitespace on the same line.
+        let trimmed_start = content[..start].rfind('\n').map(|p| p + 1).unwrap_or(start);
+        let prefix = &content[trimmed_start..start];
+        let actual_start = if prefix.chars().all(char::is_whitespace) {
+            trimmed_start
+        } else {
+            start
+        };
+        return format!("{}{}", &content[..actual_start], &content[end..]);
+    }
+    content.to_string()
+}
+
+/// Remove an XML attribute `name="value"` from a string (including leading
+/// whitespace / newline before the attribute name).
+fn remove_attribute(content: &str, attr_name: &str) -> String {
+    let search = format!("{attr_name}=\"");
+    if let Some(start) = content.find(&search)
+        && let Some(rel_end) = content[start + search.len()..].find('"')
+    {
+        let end = start + search.len() + rel_end + 1; // +1 for closing "
+        // Strip leading whitespace/newline before the attribute.
+        let stripped_start = content[..start]
+            .rfind(|c: char| !c.is_whitespace())
+            .map(|p| p + 1)
+            .unwrap_or(start);
+        return format!("{}{}", &content[..stripped_start], &content[end..]);
+    }
+    content.to_string()
 }
 
 /// Copy an existing `.xmp` sidecar to `.xmp.bak`.

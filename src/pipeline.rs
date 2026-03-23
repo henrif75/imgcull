@@ -207,19 +207,21 @@ pub async fn run_pipeline(
                 }
             }
 
-            // Backup & write
-            if options_backup
-                && sidecar_path.exists()
-                && let Err(e) = backup_sidecar(&sidecar_path)
-            {
-                error!("Backup failed for {filename}: {e}");
-            }
+            // Backup & write — only when something actually changed.
+            if sidecar.is_dirty() {
+                if options_backup
+                    && sidecar_path.exists()
+                    && let Err(e) = backup_sidecar(&sidecar_path)
+                {
+                    error!("Backup failed for {filename}: {e}");
+                }
 
-            if let Err(e) = sidecar.write(&sidecar_path) {
-                error!("Failed to write sidecar for {filename}: {e}");
-                eprintln!(
-                    "XMP write failed for {filename} — description and scores lost. Re-run with --force to retry."
-                );
+                if let Err(e) = sidecar.write(&sidecar_path) {
+                    error!("Failed to write sidecar for {filename}: {e}");
+                    eprintln!(
+                        "XMP write failed for {filename} — description and scores lost. Re-run with --force to retry."
+                    );
+                }
             }
 
             pb.inc(1);

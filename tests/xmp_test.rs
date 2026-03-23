@@ -120,3 +120,69 @@ fn has_scores_after_set_scores() {
     sidecar.set_scores(&scores, &dims, 0.85, "test");
     assert!(sidecar.has_scores());
 }
+
+/// A freshly-read sidecar that has not been modified must not be dirty.
+#[test]
+fn is_dirty_false_after_read() {
+    let sidecar =
+        XmpSidecar::read(Path::new("tests/fixtures/with_description.xmp")).expect("should parse");
+    assert!(
+        !sidecar.is_dirty(),
+        "sidecar should not be dirty after a plain read"
+    );
+}
+
+/// Writing a sidecar that was read from an existing file with third-party
+/// metadata (e.g. `tiff:Make`) must preserve that metadata in the output.
+#[test]
+fn merge_preserves_third_party_fields() {
+    let tmp = TempDir::new().unwrap();
+    let xmp_path = tmp.path().join("photo.xmp");
+
+    // Write a simulated Lightroom sidecar with a tiff:Make field.
+    let existing = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description
+      xmlns:tiff="http://ns.adobe.com/tiff/1.0/"
+      xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+      xmp:CreatorTool="Adobe Lightroom Classic">
+      <tiff:Make>Canon</tiff:Make>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+"#;
+    std::fs::write(&xmp_path, existing).unwrap();
+
+    // Read and modify with imgcull fields.
+    let mut sidecar = XmpSidecar::read(&xmp_path).expect("should parse");
+    sidecar.set_description("A sunset over the mountains");
+    sidecar.set_rating(4);
+    sidecar.write(&xmp_path).expect("should write");
+
+    let result = std::fs::read_to_string(&xmp_path).unwrap();
+
+    // Third-party fields must be preserved.
+    assert!(
+        result.contains("<tiff:Make>Canon</tiff:Make>"),
+        "tiff:Make should be preserved after merge"
+    );
+    assert!(
+        result.contains("xmp:CreatorTool=\"Adobe Lightroom Classic\""),
+        "xmp:CreatorTool attribute should be preserved"
+    );
+
+    // Our new fields must be present.
+    assert!(
+        result.contains("A sunset over the mountains"),
+        "description should be written"
+    );
+    assert!(
+        result.contains("xmp:Rating=\"4\""),
+        "rating should be written"
+    );
+
+    // Verify we can read it back correctly.
+    let read_back = XmpSidecar::read(&xmp_path).expect("should parse merged output");
+    assert_eq!(read_back.description(), Some("A sunset over the mountains"));
+}
