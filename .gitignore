@@ -2,5 +2,5 @@
 .env
 *.bak
 GEMINI.md
-CLAUDE.md
 /docs/superpowers
+conductor/
