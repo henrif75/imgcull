@@ -5,5 +5,6 @@ pub mod config;
 pub mod discovery;
 pub mod llm;
 pub mod preprocessing;
+pub mod retry;
 pub mod scoring;
 pub mod xmp;
