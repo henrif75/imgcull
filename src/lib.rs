@@ -4,3 +4,4 @@ pub mod cli;
 pub mod config;
 pub mod discovery;
 pub mod scoring;
+pub mod xmp;
