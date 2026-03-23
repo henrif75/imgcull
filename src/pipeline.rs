@@ -3,7 +3,7 @@
 //! [`run_pipeline`] iterates over a list of image paths, preprocesses each
 //! image, optionally calls the LLM for a description and/or scores, and writes
 //! an XMP sidecar.  Parallelism is bounded by a semaphore whose width is read
-//! from [`Config::default_settings::concurrency`].
+//! from the `concurrency` field in [`Config`]'s default settings.
 
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};

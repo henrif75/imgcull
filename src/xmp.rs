@@ -29,6 +29,9 @@ impl SidecarPath {
 }
 
 /// In-memory representation of an XMP sidecar file.
+///
+/// Stores image metadata including ratings, descriptions, and imgcull scores
+/// computed by LLM evaluation.
 #[derive(Debug, Clone, Default)]
 pub struct XmpSidecar {
     /// The `dc:description` text, if present.

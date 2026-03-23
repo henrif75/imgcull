@@ -60,6 +60,15 @@ async fn run_process(args: cli::ProcessArgs, describe_only: bool) -> Result<()> 
     }
     eprintln!("Found {} images to process.", images.len());
 
+    // Dry-run: list images without requiring API keys or LLM clients
+    if args.dry_run {
+        for image in &images {
+            let name = image.file_name().unwrap_or_default().to_string_lossy();
+            eprintln!("  [dry-run] Would process: {name}");
+        }
+        return Ok(());
+    }
+
     let clients = Arc::new(imgcull::llm::LlmClients::new(&config, &prompts)?);
 
     let options = imgcull::pipeline::PipelineOptions {
