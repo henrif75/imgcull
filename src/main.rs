@@ -1,5 +1,22 @@
 //! imgcull — AI-powered image culling tool using vision LLMs.
 
+mod cli;
+
+use clap::Parser;
+use cli::{Cli, Commands};
+
 fn main() {
-    println!("imgcull v0.1.0");
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Score(args) => {
+            println!("Score: {:?}", args.paths);
+        }
+        Commands::Describe(args) => {
+            println!("Describe: {:?}", args.paths);
+        }
+        Commands::Init => {
+            println!("Init: would create config files");
+        }
+    }
 }
