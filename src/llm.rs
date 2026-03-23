@@ -243,6 +243,23 @@ mod tests {
 }
 
 // ----------------------------------------------------------------
+// Shared prompt helper
+// ----------------------------------------------------------------
+
+/// Send a multimodal image + text message to any Rig agent and return the
+/// response string.  All provider impls delegate here to avoid repeating the
+/// `build_image_message` / `.prompt()` / `.context()` boilerplate.
+async fn run_agent_prompt(
+    agent: impl Prompt,
+    image_base64: &str,
+    user_prompt: &str,
+    error_context: &'static str,
+) -> Result<String> {
+    let msg = build_image_message(image_base64, user_prompt);
+    agent.prompt(msg).await.context(error_context)
+}
+
+// ----------------------------------------------------------------
 // Anthropic (Claude) provider
 // ----------------------------------------------------------------
 
@@ -255,15 +272,18 @@ struct ClaudeDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for ClaudeDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let client = rig::providers::anthropic::ClientBuilder::new(&self.api_key).build();
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("Claude description request failed")?;
-        Ok(response)
+        let agent = rig::providers::anthropic::ClientBuilder::new(&self.api_key)
+            .build()
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        run_agent_prompt(
+            agent,
+            image_base64,
+            prompt,
+            "Claude description request failed",
+        )
+        .await
     }
 }
 
@@ -276,14 +296,13 @@ struct ClaudeScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for ClaudeScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let client = rig::providers::anthropic::ClientBuilder::new(&self.api_key).build();
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("Claude scoring request failed")?;
+        let agent = rig::providers::anthropic::ClientBuilder::new(&self.api_key)
+            .build()
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        let response =
+            run_agent_prompt(agent, image_base64, prompt, "Claude scoring request failed").await?;
         parse_scoring_result(&response)
     }
 }
@@ -301,15 +320,17 @@ struct OpenAiDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for OpenAiDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let client = rig::providers::openai::Client::new(&self.api_key);
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("OpenAI description request failed")?;
-        Ok(response)
+        let agent = rig::providers::openai::Client::new(&self.api_key)
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        run_agent_prompt(
+            agent,
+            image_base64,
+            prompt,
+            "OpenAI description request failed",
+        )
+        .await
     }
 }
 
@@ -322,14 +343,12 @@ struct OpenAiScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for OpenAiScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let client = rig::providers::openai::Client::new(&self.api_key);
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("OpenAI scoring request failed")?;
+        let agent = rig::providers::openai::Client::new(&self.api_key)
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        let response =
+            run_agent_prompt(agent, image_base64, prompt, "OpenAI scoring request failed").await?;
         parse_scoring_result(&response)
     }
 }
@@ -347,15 +366,17 @@ struct GeminiDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for GeminiDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let client = rig::providers::gemini::Client::new(&self.api_key);
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("Gemini description request failed")?;
-        Ok(response)
+        let agent = rig::providers::gemini::Client::new(&self.api_key)
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        run_agent_prompt(
+            agent,
+            image_base64,
+            prompt,
+            "Gemini description request failed",
+        )
+        .await
     }
 }
 
@@ -368,14 +389,12 @@ struct GeminiScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for GeminiScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let client = rig::providers::gemini::Client::new(&self.api_key);
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("Gemini scoring request failed")?;
+        let agent = rig::providers::gemini::Client::new(&self.api_key)
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        let response =
+            run_agent_prompt(agent, image_base64, prompt, "Gemini scoring request failed").await?;
         parse_scoring_result(&response)
     }
 }
@@ -393,15 +412,17 @@ struct DeepSeekDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for DeepSeekDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let client = rig::providers::deepseek::Client::new(&self.api_key);
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("DeepSeek description request failed")?;
-        Ok(response)
+        let agent = rig::providers::deepseek::Client::new(&self.api_key)
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        run_agent_prompt(
+            agent,
+            image_base64,
+            prompt,
+            "DeepSeek description request failed",
+        )
+        .await
     }
 }
 
@@ -414,14 +435,17 @@ struct DeepSeekScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for DeepSeekScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let client = rig::providers::deepseek::Client::new(&self.api_key);
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("DeepSeek scoring request failed")?;
+        let agent = rig::providers::deepseek::Client::new(&self.api_key)
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        let response = run_agent_prompt(
+            agent,
+            image_base64,
+            prompt,
+            "DeepSeek scoring request failed",
+        )
+        .await?;
         parse_scoring_result(&response)
     }
 }
@@ -439,15 +463,17 @@ struct OllamaDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for OllamaDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let client = rig::providers::ollama::Client::from_url(&self.base_url);
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("Ollama description request failed")?;
-        Ok(response)
+        let agent = rig::providers::ollama::Client::from_url(&self.base_url)
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        run_agent_prompt(
+            agent,
+            image_base64,
+            prompt,
+            "Ollama description request failed",
+        )
+        .await
     }
 }
 
@@ -460,14 +486,12 @@ struct OllamaScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for OllamaScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let client = rig::providers::ollama::Client::from_url(&self.base_url);
-        let agent = client.agent(&self.model).preamble(&self.preamble).build();
-
-        let msg = build_image_message(image_base64, prompt);
-        let response = agent
-            .prompt(msg)
-            .await
-            .context("Ollama scoring request failed")?;
+        let agent = rig::providers::ollama::Client::from_url(&self.base_url)
+            .agent(&self.model)
+            .preamble(&self.preamble)
+            .build();
+        let response =
+            run_agent_prompt(agent, image_base64, prompt, "Ollama scoring request failed").await?;
         parse_scoring_result(&response)
     }
 }

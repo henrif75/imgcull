@@ -13,8 +13,9 @@ pub fn is_supported(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| {
-            let lower = ext.to_ascii_lowercase();
-            SUPPORTED_EXTENSIONS.contains(&lower.as_str())
+            SUPPORTED_EXTENSIONS
+                .iter()
+                .any(|&s| s.eq_ignore_ascii_case(ext))
         })
 }
 

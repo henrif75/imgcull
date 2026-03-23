@@ -46,19 +46,11 @@ impl ScoringResult {
     /// (`Some`) contribute.  Returns `0.0` when no matching dimensions are
     /// available.
     pub fn overall_score(&self, dimensions: &[String]) -> f64 {
-        let mut sum = 0.0;
-        let mut count = 0u32;
-        for dim in dimensions {
-            if let Some(val) = self.get(dim) {
-                sum += val;
-                count += 1;
-            }
-        }
-        if count == 0 {
-            0.0
-        } else {
-            sum / f64::from(count)
-        }
+        let (sum, count) = dimensions
+            .iter()
+            .filter_map(|d| self.get(d))
+            .fold((0.0f64, 0usize), |(s, n), v| (s + v, n + 1));
+        if count == 0 { 0.0 } else { sum / count as f64 }
     }
 
     /// Clamp every present score to the 0.0--1.0 range.
