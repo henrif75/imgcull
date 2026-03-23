@@ -12,6 +12,20 @@
 
 ---
 
+## Quality Directives
+
+These apply to every task. Do not mark a task complete unless all directives are satisfied.
+
+1. **Unit Tests Required** — Every module must have corresponding unit tests. Write tests before implementation (TDD). Tests must pass before committing.
+
+2. **Rust Style Guide** — All code must conform to the [Rust Style Guide](https://doc.rust-lang.org/style-guide/index.html). Run `cargo fmt` before committing any Rust code file. Do not commit unformatted code.
+
+3. **Clippy Clean** — All code must pass `cargo clippy -- -D warnings` with zero warnings. Run Clippy before each commit and fix any issues.
+
+4. **Doc Comments** — All public types, functions, and modules must have `///` doc comments to support documentation generation via `cargo doc`. Doc comments should describe purpose, parameters, return values, and any important behavior. Run `cargo doc --no-deps` to verify documentation builds without warnings.
+
+---
+
 ## File Structure
 
 ```
@@ -69,7 +83,7 @@ Replace `Cargo.toml` with:
 [package]
 name = "imgcull"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "AI-powered image culling tool using vision LLMs"
 
 [dependencies]
@@ -156,6 +170,9 @@ Expected: Compiles successfully (may take a while for first dependency fetch).
 - [ ] **Step 7: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add Cargo.toml Cargo.lock src/main.rs .gitignore .env.example
 git commit -m "feat: scaffold imgcull project with dependencies"
 ```
@@ -345,6 +362,9 @@ Expected: All 4 tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/cli.rs src/main.rs tests/cli_test.rs
 git commit -m "feat: add CLI argument parsing with clap"
 ```
@@ -653,6 +673,9 @@ Expected: All 5 tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/config.rs src/lib.rs tests/config_test.rs
 git commit -m "feat: add config and prompts loading with defaults"
 ```
@@ -803,6 +826,9 @@ Expected: All 5 tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/discovery.rs src/lib.rs tests/discovery_test.rs
 git commit -m "feat: add image file discovery with extension filtering"
 ```
@@ -987,6 +1013,9 @@ Expected: All 5 tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/scoring.rs src/lib.rs tests/scoring_test.rs
 git commit -m "feat: add scoring types, star mapping, and clamping"
 ```
@@ -1405,6 +1434,9 @@ Expected: All 8 tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/xmp.rs src/lib.rs tests/xmp_test.rs tests/fixtures/
 git commit -m "feat: add XMP sidecar read/write/merge with quick-xml"
 ```
@@ -1596,6 +1628,9 @@ Expected: All 3 tests PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/preprocessing.rs src/lib.rs tests/preprocessing_test.rs
 git commit -m "feat: add image preprocessing with resize and RAW preview extraction"
 ```
@@ -1733,6 +1768,9 @@ Expected: Compiles (the `todo!()` macros compile but will panic at runtime).
 - [ ] **Step 4: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/llm.rs src/lib.rs Cargo.toml
 git commit -m "feat: add LLM provider abstraction skeleton with Rig"
 ```
@@ -1865,6 +1903,9 @@ Expected: All 3 tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/retry.rs src/lib.rs tests/retry_test.rs
 git commit -m "feat: add retry with exponential backoff utility"
 ```
@@ -2183,6 +2224,9 @@ Expected: Compiles (LLM module still has `todo!()` but pipeline references are s
 - [ ] **Step 5: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/pipeline.rs src/summary.rs src/lib.rs
 git commit -m "feat: add processing pipeline with concurrency and progress"
 ```
@@ -2369,6 +2413,9 @@ Expected: Compiles.
 - [ ] **Step 4: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/main.rs src/lib.rs
 git commit -m "feat: wire up main.rs with full CLI orchestration"
 ```
@@ -2517,6 +2564,9 @@ Expected: Processes the image, creates `tests/fixtures/test_photo.xmp` with desc
 - [ ] **Step 3: Commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
 git add src/llm.rs
 git commit -m "feat: implement LLM provider dispatch for all 5 providers"
 ```
@@ -2558,6 +2608,10 @@ Expected: All tests pass.
 - [ ] **Step 6: Final commit**
 
 ```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
+cargo doc --no-deps
 git add -A
 git commit -m "feat: complete imgcull v0.1.0 — AI-powered image culling CLI"
 ```
