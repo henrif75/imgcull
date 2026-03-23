@@ -76,6 +76,16 @@ pub async fn run_pipeline(
         .total
         .store(images.len(), std::sync::atomic::Ordering::Relaxed);
 
+    // Compute run-level constants once before the loop.
+    let prompts_rendered = prompts.render_scoring_prompt(&dimensions, &prompts.guidelines);
+    let desc_template = prompts.description.template.clone();
+    let score_provider_name = config.default_settings.scoring_provider.clone();
+    let score_model_name = config
+        .providers
+        .get(&config.default_settings.scoring_provider)
+        .map(|p| p.model.clone())
+        .unwrap_or_default();
+
     let mut handles = Vec::new();
 
     for image_path in images {
@@ -83,14 +93,10 @@ pub async fn run_pipeline(
         let clients = clients.clone();
         let summary = summary.clone();
         let dims = dimensions.clone();
-        let prompts_rendered = prompts.render_scoring_prompt(&dimensions, &prompts.guidelines);
-        let desc_template = prompts.description.template.clone();
-        let score_provider_name = config.default_settings.scoring_provider.clone();
-        let score_model_name = config
-            .providers
-            .get(&config.default_settings.scoring_provider)
-            .map(|p| p.model.clone())
-            .unwrap_or_default();
+        let prompts_rendered = prompts_rendered.clone();
+        let desc_template = desc_template.clone();
+        let score_provider_name = score_provider_name.clone();
+        let score_model_name = score_model_name.clone();
         let pb = pb.clone();
         let options_no_desc = options.no_description || options.score_only;
         let options_no_score = options.describe_only;
@@ -187,11 +193,10 @@ pub async fn run_pipeline(
                         let provider_info = format!("{}/{}", score_provider_name, score_model_name);
                         sidecar.set_scores(&scores, &dims, overall, &provider_info);
 
-                        if !options_no_rating {
-                            sidecar.set_rating(score_to_stars(overall));
-                        }
-
                         let stars = score_to_stars(overall);
+                        if !options_no_rating {
+                            sidecar.set_rating(stars);
+                        }
                         let star_display =
                             "★".repeat(stars as usize) + &"☆".repeat(5 - stars as usize);
                         pb.println(format!("  {filename} {star_display} ({overall:.2})"));

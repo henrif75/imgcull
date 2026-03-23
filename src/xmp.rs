@@ -318,7 +318,7 @@ fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
     let mut xml = base.to_string();
 
     // --- Strip existing xmp:Rating attribute ---
-    xml = remove_attribute(&xml, "xmp:Rating");
+    remove_attribute(&mut xml, "xmp:Rating");
 
     // --- Inject xmp:Rating as an attribute if set ---
     if let Some(rating) = sidecar.rating {
@@ -336,7 +336,7 @@ fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
     }
 
     // --- Remove existing dc:description block ---
-    xml = remove_element_block(&xml, "<dc:description>", "</dc:description>");
+    remove_element_block(&mut xml, "<dc:description>", "</dc:description>");
 
     // --- Remove existing imgcull:* elements ---
     // We iteratively remove any element whose tag starts with `<imgcull:`.
@@ -350,44 +350,27 @@ fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
         let tag_name = xml[tag_start..tag_end].to_string();
         let close = format!("</{tag_name}>");
         let open_tag = xml[start..tag_end + 1].to_string();
-        xml = remove_element_block(&xml, &open_tag, &close);
+        remove_element_block(&mut xml, &open_tag, &close);
     }
 
-    // --- Ensure xmlns:imgcull is declared on <rdf:Description ---
-    if !xml.contains("xmlns:imgcull")
-        && let Some(desc_pos) = xml.find("<rdf:Description")
-        && let Some(rel_close) = xml[desc_pos..].find('>')
-    {
-        let close_pos = desc_pos + rel_close;
-        xml.insert_str(
-            close_pos,
-            "\n      xmlns:imgcull=\"http://imgcull.dev/ns/1.0/\"",
+    // --- Ensure required namespace declarations are present ---
+    ensure_namespace(
+        &mut xml,
+        "xmlns:imgcull",
+        "xmlns:imgcull=\"http://imgcull.dev/ns/1.0/\"",
+    );
+    if sidecar.description.is_some() {
+        ensure_namespace(
+            &mut xml,
+            "xmlns:dc",
+            "xmlns:dc=\"http://purl.org/dc/elements/1.1/\"",
         );
     }
-
-    // --- Ensure xmlns:dc is declared when we have a description ---
-    if sidecar.description.is_some()
-        && !xml.contains("xmlns:dc")
-        && let Some(desc_pos) = xml.find("<rdf:Description")
-        && let Some(rel_close) = xml[desc_pos..].find('>')
-    {
-        let close_pos = desc_pos + rel_close;
-        xml.insert_str(
-            close_pos,
-            "\n      xmlns:dc=\"http://purl.org/dc/elements/1.1/\"",
-        );
-    }
-
-    // --- Ensure xmlns:xmp is declared when we have a rating ---
-    if sidecar.rating.is_some()
-        && !xml.contains("xmlns:xmp")
-        && let Some(desc_pos) = xml.find("<rdf:Description")
-        && let Some(rel_close) = xml[desc_pos..].find('>')
-    {
-        let close_pos = desc_pos + rel_close;
-        xml.insert_str(
-            close_pos,
-            "\n      xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"",
+    if sidecar.rating.is_some() {
+        ensure_namespace(
+            &mut xml,
+            "xmlns:xmp",
+            "xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"",
         );
     }
 
@@ -402,50 +385,59 @@ fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
     xml
 }
 
-/// Remove an XML element block identified by its literal open and close tags.
+/// Inject `decl` onto `<rdf:Description` if `check` attribute is not already present.
+fn ensure_namespace(xml: &mut String, check: &str, decl: &str) {
+    if xml.contains(check) {
+        return;
+    }
+    if let Some(desc_pos) = xml.find("<rdf:Description")
+        && let Some(rel_close) = xml[desc_pos..].find('>')
+    {
+        xml.insert_str(desc_pos + rel_close, &format!("\n      {decl}"));
+    }
+}
+
+/// Remove an XML element block identified by its literal open and close tags, in place.
 ///
 /// Strips any leading whitespace / newline before the open tag so that the
 /// surrounding indentation is not left dangling.
-fn remove_element_block(content: &str, open: &str, close: &str) -> String {
-    if let Some(start) = content.find(open)
-        && let Some(rel_end) = content[start..].find(close)
+fn remove_element_block(xml: &mut String, open: &str, close: &str) {
+    if let Some(start) = xml.find(open)
+        && let Some(rel_end) = xml[start..].find(close)
     {
         let end = start + rel_end + close.len();
         // Also consume a trailing newline if present.
-        let end = if content[end..].starts_with('\n') {
+        let end = if xml[end..].starts_with('\n') {
             end + 1
         } else {
             end
         };
         // Also strip the leading whitespace on the same line.
-        let trimmed_start = content[..start].rfind('\n').map(|p| p + 1).unwrap_or(start);
-        let prefix = &content[trimmed_start..start];
-        let actual_start = if prefix.chars().all(char::is_whitespace) {
+        let trimmed_start = xml[..start].rfind('\n').map(|p| p + 1).unwrap_or(start);
+        let actual_start = if xml[trimmed_start..start].chars().all(char::is_whitespace) {
             trimmed_start
         } else {
             start
         };
-        return format!("{}{}", &content[..actual_start], &content[end..]);
+        xml.replace_range(actual_start..end, "");
     }
-    content.to_string()
 }
 
-/// Remove an XML attribute `name="value"` from a string (including leading
+/// Remove an XML attribute `name="value"` from a string in place (including leading
 /// whitespace / newline before the attribute name).
-fn remove_attribute(content: &str, attr_name: &str) -> String {
+fn remove_attribute(xml: &mut String, attr_name: &str) {
     let search = format!("{attr_name}=\"");
-    if let Some(start) = content.find(&search)
-        && let Some(rel_end) = content[start + search.len()..].find('"')
+    if let Some(start) = xml.find(&search)
+        && let Some(rel_end) = xml[start + search.len()..].find('"')
     {
         let end = start + search.len() + rel_end + 1; // +1 for closing "
         // Strip leading whitespace/newline before the attribute.
-        let stripped_start = content[..start]
+        let stripped_start = xml[..start]
             .rfind(|c: char| !c.is_whitespace())
             .map(|p| p + 1)
             .unwrap_or(start);
-        return format!("{}{}", &content[..stripped_start], &content[end..]);
+        xml.replace_range(stripped_start..end, "");
     }
-    content.to_string()
 }
 
 /// Copy an existing `.xmp` sidecar to `.xmp.bak`.
