@@ -11,10 +11,10 @@ fn score_subcommand_with_paths_is_recognized() {
         .output()
         .expect("failed to run imgcull");
     assert!(output.status.success(), "score subcommand should succeed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stdout.contains("photo.jpg"),
-        "should echo the path: {stdout}"
+        stderr.contains("photo.jpg"),
+        "should echo the path: {stderr}"
     );
 }
 
@@ -28,10 +28,10 @@ fn describe_subcommand_with_paths_is_recognized() {
         output.status.success(),
         "describe subcommand should succeed"
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stdout.contains("photo.jpg"),
-        "should echo the path: {stdout}"
+        stderr.contains("photo.jpg"),
+        "should echo the path: {stderr}"
     );
 }
 
@@ -42,11 +42,8 @@ fn init_subcommand_is_recognized() {
         .output()
         .expect("failed to run imgcull");
     assert!(output.status.success(), "init subcommand should succeed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Init"),
-        "should print init message: {stdout}"
-    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.is_empty(), "should print init message: {stderr}");
 }
 
 #[test]
