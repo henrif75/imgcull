@@ -51,13 +51,15 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 
 `LlmClients` holds two boxed trait objects. The `build_*_provider()` functions in `llm.rs` match on provider name strings ("claude", "openai", "gemini", "deepseek", "ollama") and construct the appropriate Rig client. Adding a new provider means: add a struct pair, implement both traits, add match arms.
 
-### Rig crate notes (rig-core 0.11)
+### Rig crate notes (rig-core 0.33)
 
-- Anthropic: `ClientBuilder::new(key).build()` (builder pattern)
-- OpenAI/Gemini/DeepSeek: `Client::new(key)` (direct)
-- Ollama: `Client::from_url(base_url)` (no API key)
-- Image messages: `Message::User` with `UserContent::image()` + `UserContent::text()` via `OneOrMany`
-- Import paths: `rig::completion::message::{ContentFormat, ImageMediaType, UserContent}`, `rig::completion::{Message, Prompt}`, `rig::OneOrMany`
+- All providers: `Client::new(key)?` returns `Result<Client>` — must propagate with `?`
+- Anthropic: `rig::providers::anthropic::Client::new(&key)?`
+- OpenAI/Gemini/DeepSeek: `Client::new(&key)?`
+- Ollama: `Client::builder().api_key(Nothing).base_url(&url).build()?` (no API key)
+- `agent()` is on the `CompletionClient` trait — must be imported: `use rig::client::CompletionClient`
+- Image messages: `UserContent::image_base64(data, Some(ImageMediaType::JPEG), None)` (3 args)
+- Import paths: `rig::client::{CompletionClient, Nothing}`, `rig::completion::message::{ImageMediaType, UserContent}`, `rig::completion::{Message, Prompt}`, `rig::OneOrMany`
 
 ## Project conventions
 

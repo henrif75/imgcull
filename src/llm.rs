@@ -7,7 +7,8 @@
 
 use anyhow::{Context, Result};
 use rig::OneOrMany;
-use rig::completion::message::{ContentFormat, ImageMediaType, UserContent};
+use rig::client::{CompletionClient, Nothing};
+use rig::completion::message::{ImageMediaType, UserContent};
 use rig::completion::{Message, Prompt};
 
 use crate::config::{Config, Prompts, ProviderConfig};
@@ -133,9 +134,8 @@ fn resolve_api_key(provider_config: &ProviderConfig) -> Result<String> {
 ///
 /// The image is passed as base64-encoded JPEG data.
 fn build_image_message(image_base64: &str, prompt: &str) -> Message {
-    let mut content = OneOrMany::one(UserContent::image(
+    let mut content = OneOrMany::one(UserContent::image_base64(
         image_base64,
-        Some(ContentFormat::Base64),
         Some(ImageMediaType::JPEG),
         None,
     ));
@@ -272,8 +272,7 @@ struct ClaudeDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for ClaudeDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::anthropic::ClientBuilder::new(&self.api_key)
-            .build()
+        let agent = rig::providers::anthropic::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
@@ -296,8 +295,7 @@ struct ClaudeScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for ClaudeScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::anthropic::ClientBuilder::new(&self.api_key)
-            .build()
+        let agent = rig::providers::anthropic::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
@@ -320,7 +318,7 @@ struct OpenAiDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for OpenAiDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::openai::Client::new(&self.api_key)
+        let agent = rig::providers::openai::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
@@ -343,7 +341,7 @@ struct OpenAiScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for OpenAiScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::openai::Client::new(&self.api_key)
+        let agent = rig::providers::openai::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
@@ -366,7 +364,7 @@ struct GeminiDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for GeminiDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::gemini::Client::new(&self.api_key)
+        let agent = rig::providers::gemini::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
@@ -389,7 +387,7 @@ struct GeminiScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for GeminiScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::gemini::Client::new(&self.api_key)
+        let agent = rig::providers::gemini::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
@@ -412,7 +410,7 @@ struct DeepSeekDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for DeepSeekDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::deepseek::Client::new(&self.api_key)
+        let agent = rig::providers::deepseek::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
@@ -435,7 +433,7 @@ struct DeepSeekScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for DeepSeekScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::deepseek::Client::new(&self.api_key)
+        let agent = rig::providers::deepseek::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
@@ -463,7 +461,10 @@ struct OllamaDescriptionProvider {
 #[async_trait::async_trait]
 impl DescriptionProvider for OllamaDescriptionProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::ollama::Client::from_url(&self.base_url)
+        let agent = rig::providers::ollama::Client::builder()
+            .api_key(Nothing)
+            .base_url(&self.base_url)
+            .build()?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
@@ -486,7 +487,10 @@ struct OllamaScoringProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for OllamaScoringProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::ollama::Client::from_url(&self.base_url)
+        let agent = rig::providers::ollama::Client::builder()
+            .api_key(Nothing)
+            .base_url(&self.base_url)
+            .build()?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
