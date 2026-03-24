@@ -1,0 +1,69 @@
+# imgcull — example config.toml
+#
+# Place this file at:
+#   macOS: ~/Library/Application Support/imgcull/config.toml
+#   Linux: ~/.config/imgcull/config.toml
+#
+# All fields are optional — imgcull falls back to built-in defaults
+# for any section or key that is omitted.
+
+# ── Default processing settings ───────────────────────────────────────────────
+
+[default]
+
+# Provider used to generate image descriptions.
+description_provider = "claude"
+
+# Provider used to score images.
+scoring_provider = "claude"
+
+# Maximum number of images processed in parallel.
+# Higher values speed up large batches at the cost of more concurrent API calls.
+concurrency = 4
+
+# Write xmp:Rating (1–5 stars) to the sidecar after scoring.
+# Set to false if you want scores without affecting star ratings in Lightroom.
+set_rating = true
+
+# Automatically back up existing .xmp sidecars to .xmp.bak before overwriting.
+backup = false
+
+
+# ── Provider configurations ────────────────────────────────────────────────────
+# Only configure the providers you actually use.
+# API keys are read from environment variables — never stored in this file.
+
+[providers.claude]
+model       = "claude-opus-4-5"          # or claude-sonnet-4-6
+api_key_env = "ANTHROPIC_API_KEY"
+
+[providers.openai]
+model       = "gpt-4o"
+api_key_env = "OPENAI_API_KEY"
+
+[providers.gemini]
+model       = "gemini-1.5-pro"           # or gemini-2.0-flash
+api_key_env = "GEMINI_API_KEY"
+
+[providers.deepseek]
+model       = "deepseek-chat"            # DeepSeek-V3 API name
+api_key_env = "DEEPSEEK_API_KEY"
+
+[providers.ollama]
+model    = "llava"                       # any vision-capable model pulled via `ollama pull`
+base_url = "http://localhost:11434"      # no api_key_env needed for local Ollama
+
+
+# ── Scoring dimensions ─────────────────────────────────────────────────────────
+# The dimensions listed here are passed to the LLM for scoring.
+# Each dimension must have a matching entry under [guidelines] in prompts.toml.
+# You can use any subset of the defaults, or add custom dimension names.
+
+[scoring]
+dimensions = [
+  "sharpness",
+  "exposure",
+  "composition",
+  "subject_clarity",
+  "aesthetics",
+]

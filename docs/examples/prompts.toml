@@ -1,0 +1,53 @@
+# imgcull — example prompts.toml
+#
+# Place this file at:
+#   macOS: ~/Library/Application Support/imgcull/prompts.toml
+#   Linux: ~/.config/imgcull/prompts.toml
+#
+# Edit the system messages and templates to tune how the LLM describes and
+# scores your photos. All fields shown here are optional — imgcull uses
+# built-in defaults for anything omitted.
+
+# ── Description prompt ─────────────────────────────────────────────────────────
+# Used by `imgcull describe` and `imgcull score` (unless --no-description).
+
+[description]
+system = "You are a concise photography describer."
+
+template = """
+Describe this photograph in 1-3 sentences. Include the subject, setting, \
+lighting conditions, and mood. Be concise and factual.
+"""
+
+
+# ── Scoring prompt ─────────────────────────────────────────────────────────────
+# Used by `imgcull score`.
+#
+# The {{dimensions}} and {{guidelines}} placeholders are replaced at runtime
+# with the list of active dimensions and the per-dimension guidance below.
+
+[scoring]
+system = "You are an expert photography critic."
+
+template = """
+Analyze this image and score it on the following dimensions (each 0.0 to 1.0):
+
+{{dimensions}}
+
+Scoring guidelines:
+{{guidelines}}
+
+Return your scores as a JSON object with dimension names as keys.
+"""
+
+
+# ── Per-dimension scoring guidelines ──────────────────────────────────────────
+# These are injected into {{guidelines}} in the scoring template above.
+# Add or remove entries to match the dimensions list in config.toml.
+
+[guidelines]
+sharpness      = "1.0 = tack sharp on subject, 0.0 = completely blurry"
+exposure       = "1.0 = perfectly exposed, 0.0 = severely over/underexposed"
+composition    = "1.0 = excellent framing and balance, 0.0 = poorly composed"
+subject_clarity = "1.0 = subject immediately clear, 0.0 = no discernible subject"
+aesthetics     = "1.0 = visually stunning, 0.0 = no aesthetic appeal"
