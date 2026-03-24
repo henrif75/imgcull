@@ -153,6 +153,8 @@ pub async fn run_pipeline(
                 XmpSidecar::new()
             };
 
+            sidecar.set_original_filename(&filename);
+
             let needs_description =
                 !options_no_desc && (options_force || !sidecar.has_description());
             let needs_scoring = !options_no_score && (options_force || !sidecar.has_scores());

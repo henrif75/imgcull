@@ -48,6 +48,8 @@ pub struct XmpSidecar {
     scored_by: Option<String>,
     /// Comma-separated list of scored dimensions.
     dimensions_list: Option<String>,
+    /// Original filename of the source image.
+    original_filename: Option<String>,
     /// Whether any field has been modified since construction or last read.
     ///
     /// Used by the pipeline to skip writing when nothing has changed.
@@ -115,6 +117,11 @@ impl XmpSidecar {
         // Extract imgcull:scored_by.
         if let Some(val) = extract_element(&content, "imgcull:scored_by") {
             sidecar.scored_by = Some(val);
+        }
+
+        // Extract imgcull:original_filename.
+        if let Some(val) = extract_element(&content, "imgcull:original_filename") {
+            sidecar.original_filename = Some(val);
         }
 
         // Extract imgcull:dimensions.
@@ -206,6 +213,12 @@ impl XmpSidecar {
         self.dirty = true;
     }
 
+    /// Set the original filename of the source image.
+    pub fn set_original_filename(&mut self, filename: &str) {
+        self.original_filename = Some(filename.to_string());
+        self.dirty = true;
+    }
+
     /// Write the XMP document to disk.
     ///
     /// If the sidecar was previously read from disk (i.e. `raw_content` is
@@ -276,6 +289,14 @@ fn build_imgcull_fields(sidecar: &XmpSidecar) -> String {
     if let Some(ref dims) = sidecar.dimensions_list {
         fields.push_str(&format!(
             "      <imgcull:dimensions>{dims}</imgcull:dimensions>\n"
+        ));
+    }
+
+    // imgcull:original_filename
+    if let Some(ref fname) = sidecar.original_filename {
+        let escaped = escape(fname);
+        fields.push_str(&format!(
+            "      <imgcull:original_filename>{escaped}</imgcull:original_filename>\n"
         ));
     }
 
