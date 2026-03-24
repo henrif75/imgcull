@@ -50,6 +50,8 @@ pub struct XmpSidecar {
     dimensions_list: Option<String>,
     /// Original filename of the source image.
     original_filename: Option<String>,
+    /// Raw LLM response text from the scoring call.
+    scoring_response: Option<String>,
     /// Whether any field has been modified since construction or last read.
     ///
     /// Used by the pipeline to skip writing when nothing has changed.
@@ -122,6 +124,11 @@ impl XmpSidecar {
         // Extract imgcull:original_filename.
         if let Some(val) = extract_element(&content, "imgcull:original_filename") {
             sidecar.original_filename = Some(val);
+        }
+
+        // Extract imgcull:scoring_response.
+        if let Some(val) = extract_element(&content, "imgcull:scoring_response") {
+            sidecar.scoring_response = Some(val);
         }
 
         // Extract imgcull:dimensions.
@@ -219,6 +226,12 @@ impl XmpSidecar {
         self.dirty = true;
     }
 
+    /// Store the raw LLM response text from the scoring call.
+    pub fn set_scoring_response(&mut self, response: &str) {
+        self.scoring_response = Some(response.to_string());
+        self.dirty = true;
+    }
+
     /// Write the XMP document to disk.
     ///
     /// If the sidecar was previously read from disk (i.e. `raw_content` is
@@ -297,6 +310,14 @@ fn build_imgcull_fields(sidecar: &XmpSidecar) -> String {
         let escaped = escape(fname);
         fields.push_str(&format!(
             "      <imgcull:original_filename>{escaped}</imgcull:original_filename>\n"
+        ));
+    }
+
+    // imgcull:scoring_response
+    if let Some(ref response) = sidecar.scoring_response {
+        let escaped = escape(response);
+        fields.push_str(&format!(
+            "      <imgcull:scoring_response>{escaped}</imgcull:scoring_response>\n"
         ));
     }
 

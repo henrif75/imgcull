@@ -194,11 +194,12 @@ pub async fn run_pipeline(
                 let score_result =
                     retry_with_backoff(3, || async { c.score(&b64, &prompt).await }).await;
                 match score_result {
-                    Ok(mut scores) => {
+                    Ok((mut scores, raw_response)) => {
                         scores.clamp();
                         let overall = scores.overall_score(&dims);
                         let provider_info = format!("{}/{}", score_provider_name, score_model_name);
                         sidecar.set_scores(&scores, &dims, overall, &provider_info);
+                        sidecar.set_scoring_response(&raw_response);
 
                         let stars = score_to_stars(overall);
                         if !options_no_rating {
