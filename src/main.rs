@@ -7,6 +7,12 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env from the platform config directory first so API keys are
+    // available regardless of which directory imgcull is run from.
+    if let Some(config_dir) = dirs::config_dir().map(|d| d.join("imgcull")) {
+        dotenvy::from_path(config_dir.join(".env")).ok();
+    }
+    // Also load from CWD as a fallback (useful during development).
     dotenvy::dotenv().ok();
 
     let cli = Cli::parse();
@@ -116,7 +122,7 @@ fn run_init() -> Result<()> {
         std::fs::write(
             &env_example_path,
             "# imgcull — API keys for LLM providers\n\
-             # Copy this file to .env in your photos directory and fill in the keys you need.\n\n\
+             # Copy this file to .env in this directory and fill in the keys you need.\n\n\
              # ANTHROPIC_API_KEY=sk-ant-...\n\
              # OPENAI_API_KEY=sk-...\n\
              # GEMINI_API_KEY=...\n\
