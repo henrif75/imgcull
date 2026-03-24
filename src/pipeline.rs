@@ -76,15 +76,20 @@ pub async fn run_pipeline(
         .total
         .store(images.len(), std::sync::atomic::Ordering::Relaxed);
 
-    // Compute run-level constants once before the loop.
-    let prompts_rendered = prompts.render_scoring_prompt(&dimensions, &prompts.guidelines);
-    let desc_template = prompts.description.template.clone();
-    let score_provider_name = config.default_settings.scoring_provider.clone();
-    let score_model_name = config
+    // Compute run-level constants once before the loop.  Arc-wrapped so that
+    // each spawn only bumps a refcount instead of cloning the full String.
+    let prompts_rendered: Arc<str> = prompts
+        .render_scoring_prompt(&dimensions, &prompts.guidelines)
+        .into();
+    let desc_template: Arc<str> = prompts.description.template.clone().into();
+    let score_provider_name: Arc<str> = config.default_settings.scoring_provider.clone().into();
+    let score_model_name: Arc<str> = config
         .providers
         .get(&config.default_settings.scoring_provider)
         .map(|p| p.model.clone())
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into();
+    let dimensions: Arc<[String]> = dimensions.into();
 
     let mut handles = Vec::new();
 
