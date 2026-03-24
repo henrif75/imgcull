@@ -156,4 +156,4 @@ cargo fmt && cargo clippy -- -D warnings && cargo test
 
 ## 📄 License
 
-Distributed under the **MIT OR Apache-2.0** license. See [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE.Apache`](LICENSE.Apache) for details.
+Distributed under the **MIT OR Apache-2.0** license. See [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE) for details.
