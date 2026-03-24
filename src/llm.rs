@@ -38,15 +38,8 @@ pub trait ScoringProvider: Send + Sync {
 // LlmClients
 // ----------------------------------------------------------------
 
-/// Holds pre-built description and scoring provider instances along with the
-/// system-prompt preambles read from the project's prompts configuration.
+/// Holds pre-built description and scoring provider instances.
 pub struct LlmClients {
-    /// System preamble injected into every description request.
-    pub description_preamble: String,
-
-    /// System preamble injected into every scoring request.
-    pub scoring_preamble: String,
-
     description_provider: Box<dyn DescriptionProvider + Send + Sync>,
     scoring_provider: Box<dyn ScoringProvider + Send + Sync>,
 }
@@ -75,17 +68,15 @@ impl LlmClients {
             .get(score_provider_name)
             .with_context(|| format!("Unknown scoring provider: {score_provider_name}"))?;
 
-        let description_preamble = prompts.description.system.clone();
-        let scoring_preamble = prompts.scoring.system.clone();
-
-        let description_provider =
-            build_description_provider(desc_provider_name, desc_config, &description_preamble)?;
+        let description_provider = build_description_provider(
+            desc_provider_name,
+            desc_config,
+            &prompts.description.system,
+        )?;
         let scoring_provider =
-            build_scoring_provider(score_provider_name, score_config, &scoring_preamble)?;
+            build_scoring_provider(score_provider_name, score_config, &prompts.scoring.system)?;
 
         Ok(Self {
-            description_preamble,
-            scoring_preamble,
             description_provider,
             scoring_provider,
         })
@@ -260,17 +251,17 @@ async fn run_agent_prompt(
 }
 
 // ----------------------------------------------------------------
-// Anthropic (Claude) provider
+// Provider structs — one per backend, each implements both traits
 // ----------------------------------------------------------------
 
-struct ClaudeDescriptionProvider {
+struct ClaudeProvider {
     api_key: String,
     model: String,
     preamble: String,
 }
 
 #[async_trait::async_trait]
-impl DescriptionProvider for ClaudeDescriptionProvider {
+impl DescriptionProvider for ClaudeProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
         let agent = rig::providers::anthropic::Client::new(&self.api_key)?
             .agent(&self.model)
@@ -286,37 +277,27 @@ impl DescriptionProvider for ClaudeDescriptionProvider {
     }
 }
 
-struct ClaudeScoringProvider {
-    api_key: String,
-    model: String,
-    preamble: String,
-}
-
 #[async_trait::async_trait]
-impl ScoringProvider for ClaudeScoringProvider {
+impl ScoringProvider for ClaudeProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::anthropic::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
-        let response =
-            run_agent_prompt(agent, image_base64, prompt, "Claude scoring request failed").await?;
-        parse_scoring_result(&response)
+        run_agent_prompt(agent, image_base64, prompt, "Claude scoring request failed")
+            .await
+            .and_then(|r| parse_scoring_result(&r))
     }
 }
 
-// ----------------------------------------------------------------
-// OpenAI provider
-// ----------------------------------------------------------------
-
-struct OpenAiDescriptionProvider {
+struct OpenAiProvider {
     api_key: String,
     model: String,
     preamble: String,
 }
 
 #[async_trait::async_trait]
-impl DescriptionProvider for OpenAiDescriptionProvider {
+impl DescriptionProvider for OpenAiProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
         let agent = rig::providers::openai::Client::new(&self.api_key)?
             .agent(&self.model)
@@ -332,37 +313,27 @@ impl DescriptionProvider for OpenAiDescriptionProvider {
     }
 }
 
-struct OpenAiScoringProvider {
-    api_key: String,
-    model: String,
-    preamble: String,
-}
-
 #[async_trait::async_trait]
-impl ScoringProvider for OpenAiScoringProvider {
+impl ScoringProvider for OpenAiProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::openai::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
-        let response =
-            run_agent_prompt(agent, image_base64, prompt, "OpenAI scoring request failed").await?;
-        parse_scoring_result(&response)
+        run_agent_prompt(agent, image_base64, prompt, "OpenAI scoring request failed")
+            .await
+            .and_then(|r| parse_scoring_result(&r))
     }
 }
 
-// ----------------------------------------------------------------
-// Gemini provider
-// ----------------------------------------------------------------
-
-struct GeminiDescriptionProvider {
+struct GeminiProvider {
     api_key: String,
     model: String,
     preamble: String,
 }
 
 #[async_trait::async_trait]
-impl DescriptionProvider for GeminiDescriptionProvider {
+impl DescriptionProvider for GeminiProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
         let agent = rig::providers::gemini::Client::new(&self.api_key)?
             .agent(&self.model)
@@ -378,37 +349,27 @@ impl DescriptionProvider for GeminiDescriptionProvider {
     }
 }
 
-struct GeminiScoringProvider {
-    api_key: String,
-    model: String,
-    preamble: String,
-}
-
 #[async_trait::async_trait]
-impl ScoringProvider for GeminiScoringProvider {
+impl ScoringProvider for GeminiProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::gemini::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
-        let response =
-            run_agent_prompt(agent, image_base64, prompt, "Gemini scoring request failed").await?;
-        parse_scoring_result(&response)
+        run_agent_prompt(agent, image_base64, prompt, "Gemini scoring request failed")
+            .await
+            .and_then(|r| parse_scoring_result(&r))
     }
 }
 
-// ----------------------------------------------------------------
-// DeepSeek provider
-// ----------------------------------------------------------------
-
-struct DeepSeekDescriptionProvider {
+struct DeepSeekProvider {
     api_key: String,
     model: String,
     preamble: String,
 }
 
 #[async_trait::async_trait]
-impl DescriptionProvider for DeepSeekDescriptionProvider {
+impl DescriptionProvider for DeepSeekProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
         let agent = rig::providers::deepseek::Client::new(&self.api_key)?
             .agent(&self.model)
@@ -424,42 +385,32 @@ impl DescriptionProvider for DeepSeekDescriptionProvider {
     }
 }
 
-struct DeepSeekScoringProvider {
-    api_key: String,
-    model: String,
-    preamble: String,
-}
-
 #[async_trait::async_trait]
-impl ScoringProvider for DeepSeekScoringProvider {
+impl ScoringProvider for DeepSeekProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::deepseek::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
-        let response = run_agent_prompt(
+        run_agent_prompt(
             agent,
             image_base64,
             prompt,
             "DeepSeek scoring request failed",
         )
-        .await?;
-        parse_scoring_result(&response)
+        .await
+        .and_then(|r| parse_scoring_result(&r))
     }
 }
 
-// ----------------------------------------------------------------
-// Ollama provider
-// ----------------------------------------------------------------
-
-struct OllamaDescriptionProvider {
+struct OllamaProvider {
     base_url: String,
     model: String,
     preamble: String,
 }
 
 #[async_trait::async_trait]
-impl DescriptionProvider for OllamaDescriptionProvider {
+impl DescriptionProvider for OllamaProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
         let agent = rig::providers::ollama::Client::builder()
             .api_key(Nothing)
@@ -478,14 +429,8 @@ impl DescriptionProvider for OllamaDescriptionProvider {
     }
 }
 
-struct OllamaScoringProvider {
-    base_url: String,
-    model: String,
-    preamble: String,
-}
-
 #[async_trait::async_trait]
-impl ScoringProvider for OllamaScoringProvider {
+impl ScoringProvider for OllamaProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::ollama::Client::builder()
             .api_key(Nothing)
@@ -494,9 +439,9 @@ impl ScoringProvider for OllamaScoringProvider {
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
-        let response =
-            run_agent_prompt(agent, image_base64, prompt, "Ollama scoring request failed").await?;
-        parse_scoring_result(&response)
+        run_agent_prompt(agent, image_base64, prompt, "Ollama scoring request failed")
+            .await
+            .and_then(|r| parse_scoring_result(&r))
     }
 }
 
@@ -511,57 +456,35 @@ fn build_description_provider(
     preamble: &str,
 ) -> Result<Box<dyn DescriptionProvider + Send + Sync>> {
     match name {
-        "claude" => {
-            let api_key = resolve_api_key(config)?;
-            let model = config.model.clone();
-            Ok(Box::new(ClaudeDescriptionProvider {
-                api_key,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        "openai" => {
-            let api_key = resolve_api_key(config)?;
-            let model = config.model.clone();
-            Ok(Box::new(OpenAiDescriptionProvider {
-                api_key,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        "gemini" => {
-            let api_key = resolve_api_key(config)?;
-            let model = config.model.clone();
-            Ok(Box::new(GeminiDescriptionProvider {
-                api_key,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        "deepseek" => {
-            let api_key = resolve_api_key(config)?;
-            let model = config.model.clone();
-            Ok(Box::new(DeepSeekDescriptionProvider {
-                api_key,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        "ollama" => {
-            let base_url = config
+        "claude" => Ok(Box::new(ClaudeProvider {
+            api_key: resolve_api_key(config)?,
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        "openai" => Ok(Box::new(OpenAiProvider {
+            api_key: resolve_api_key(config)?,
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        "gemini" => Ok(Box::new(GeminiProvider {
+            api_key: resolve_api_key(config)?,
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        "deepseek" => Ok(Box::new(DeepSeekProvider {
+            api_key: resolve_api_key(config)?,
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        "ollama" => Ok(Box::new(OllamaProvider {
+            base_url: config
                 .base_url
                 .clone()
-                .unwrap_or_else(|| "http://localhost:11434".to_string());
-            let model = config.model.clone();
-            Ok(Box::new(OllamaDescriptionProvider {
-                base_url,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        other => {
-            anyhow::bail!("Unsupported description provider: {other}")
-        }
+                .unwrap_or_else(|| "http://localhost:11434".to_string()),
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        other => anyhow::bail!("Unsupported description provider: {other}"),
     }
 }
 
@@ -576,56 +499,34 @@ fn build_scoring_provider(
     preamble: &str,
 ) -> Result<Box<dyn ScoringProvider + Send + Sync>> {
     match name {
-        "claude" => {
-            let api_key = resolve_api_key(config)?;
-            let model = config.model.clone();
-            Ok(Box::new(ClaudeScoringProvider {
-                api_key,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        "openai" => {
-            let api_key = resolve_api_key(config)?;
-            let model = config.model.clone();
-            Ok(Box::new(OpenAiScoringProvider {
-                api_key,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        "gemini" => {
-            let api_key = resolve_api_key(config)?;
-            let model = config.model.clone();
-            Ok(Box::new(GeminiScoringProvider {
-                api_key,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        "deepseek" => {
-            let api_key = resolve_api_key(config)?;
-            let model = config.model.clone();
-            Ok(Box::new(DeepSeekScoringProvider {
-                api_key,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        "ollama" => {
-            let base_url = config
+        "claude" => Ok(Box::new(ClaudeProvider {
+            api_key: resolve_api_key(config)?,
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        "openai" => Ok(Box::new(OpenAiProvider {
+            api_key: resolve_api_key(config)?,
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        "gemini" => Ok(Box::new(GeminiProvider {
+            api_key: resolve_api_key(config)?,
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        "deepseek" => Ok(Box::new(DeepSeekProvider {
+            api_key: resolve_api_key(config)?,
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        "ollama" => Ok(Box::new(OllamaProvider {
+            base_url: config
                 .base_url
                 .clone()
-                .unwrap_or_else(|| "http://localhost:11434".to_string());
-            let model = config.model.clone();
-            Ok(Box::new(OllamaScoringProvider {
-                base_url,
-                model,
-                preamble: preamble.to_string(),
-            }))
-        }
-        other => {
-            anyhow::bail!("Unsupported scoring provider: {other}")
-        }
+                .unwrap_or_else(|| "http://localhost:11434".to_string()),
+            model: config.model.clone(),
+            preamble: preamble.to_string(),
+        })),
+        other => anyhow::bail!("Unsupported scoring provider: {other}"),
     }
 }
