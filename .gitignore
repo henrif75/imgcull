@@ -1,7 +1,8 @@
 /target
+/docs/superpowers
+/conductor
+/bin
+README_guidelines.md
 .env
 *.bak
 GEMINI.md
-/docs/superpowers
-conductor/
-README_guidelines.md
