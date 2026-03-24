@@ -33,7 +33,7 @@ where
             Ok(val) => return Ok(val),
             Err(e) => {
                 warn!(
-                    "Attempt {attempt}/{max_attempts} failed: {e}. {}",
+                    "Attempt {attempt}/{max_attempts} failed: {e:#}. {}",
                     if attempt < max_attempts {
                         format!("Retrying in {}s...", delay.as_secs())
                     } else {

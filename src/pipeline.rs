@@ -172,7 +172,7 @@ pub async fn run_pipeline(
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
                     Err(e) => {
-                        warn!("Description failed for {filename}: {e}");
+                        warn!("Description failed for {filename}: {e:#}");
                         summary
                             .skipped_llm_error
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -209,7 +209,7 @@ pub async fn run_pipeline(
                         summary.record_score(&filename, overall);
                     }
                     Err(e) => {
-                        warn!("Scoring failed for {filename}: {e}");
+                        warn!("Scoring failed for {filename}: {e:#}");
                         summary
                             .skipped_llm_error
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
