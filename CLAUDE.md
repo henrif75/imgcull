@@ -65,7 +65,7 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 - **All public items require `///` doc comments** — verified by `cargo doc --no-deps` producing zero warnings.
 - **Integration tests live in `tests/`**, unit tests in `#[cfg(test)] mod tests` blocks within source files.
 - **API keys are never stored in config** — resolved from environment variables via `dotenvy`. The `api_key_env` field in provider config names the env var.
-- **Config precedence**: CLI flag > config file (`~/.config/imgcull/config.toml`) > built-in default.
+- **Config precedence**: CLI flag > config file (`~/Library/Application Support/imgcull/config.toml`) > built-in default.
 
 ## Git Workflow
 

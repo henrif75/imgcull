@@ -52,11 +52,11 @@ cargo build --release
 imgcull init
 ```
 
-This creates `~/.config/imgcull/config.toml`, `prompts.toml`, and `.env.example`. Copy `.env.example` to `.env` and fill in your API key:
+This creates `~/Library/Application Support/imgcull/config.toml`, `prompts.toml`, and `.env.example`. Copy `.env.example` to `.env` and fill in your API key:
 
 ```bash
-cp ~/.config/imgcull/.env.example ~/.config/imgcull/.env
-# Edit ~/.config/imgcull/.env and set e.g. ANTHROPIC_API_KEY=sk-...
+cp ~/Library/"Application Support"/imgcull/.env.example ~/Library/"Application Support"/imgcull/.env
+# Edit ~/Library/"Application Support"/imgcull/.env and set e.g. ANTHROPIC_API_KEY=sk-...
 ```
 
 ---
@@ -115,7 +115,7 @@ imgcull score --dry-run ~/Photos/2026-03-shoot/
 
 ### Configuration
 
-imgcull reads `~/.config/imgcull/config.toml`. Example:
+imgcull reads `~/Library/Application Support/imgcull/config.toml`. Example:
 
 ```toml
 [default]
@@ -135,7 +135,7 @@ base_url = "http://localhost:11434"
 dimensions = ["sharpness", "exposure", "composition", "subject_clarity", "aesthetics"]
 ```
 
-Custom prompts can be edited in `~/.config/imgcull/prompts.toml`.
+Custom prompts can be edited in `~/Library/Application Support/imgcull/prompts.toml`.
 
 ---
 

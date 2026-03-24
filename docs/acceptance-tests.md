@@ -38,14 +38,14 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 **Steps:**
 
-1. Remove any existing imgcull config: `rm -rf ~/.config/imgcull`
+1. Remove any existing imgcull config: `rm -rf ~/Library/"Application Support"/imgcull`
 2. Run `imgcull init`
 
 **Expected result:**
 
-- `~/.config/imgcull/config.toml` exists and is valid TOML
-- `~/.config/imgcull/prompts.toml` exists and is valid TOML
-- `~/.config/imgcull/.env.example` exists and contains placeholder key names (e.g. `ANTHROPIC_API_KEY=`)
+- `~/Library/Application Support/imgcull/config.toml` exists and is valid TOML
+- `~/Library/Application Support/imgcull/prompts.toml` exists and is valid TOML
+- `~/Library/Application Support/imgcull/.env.example` exists and contains placeholder key names (e.g. `ANTHROPIC_API_KEY=`)
 - No error messages in output
 
 **Pass criteria:** All three files present; `imgcull init` exits 0.
