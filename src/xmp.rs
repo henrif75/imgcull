@@ -89,9 +89,6 @@ impl XmpSidecar {
 
         let mut sidecar = Self::new();
 
-        // Store raw content for merge-on-write.
-        sidecar.raw_content = Some(content.clone());
-
         // Extract dc:description text via simple string searching.
         if let Some(start) = content.find("<rdf:li xml:lang=\"x-default\">") {
             let text_start = start + "<rdf:li xml:lang=\"x-default\">".len();
@@ -122,8 +119,7 @@ impl XmpSidecar {
 
         // Extract imgcull:dimensions.
         if let Some(val) = extract_element(&content, "imgcull:dimensions") {
-            sidecar.dimensions_list = Some(val.clone());
-            // Parse individual dimension scores.
+            // Parse individual dimension scores before moving val.
             for dim_name in val.split(',') {
                 let dim_name = dim_name.trim();
                 if let Some(score_str) = extract_element(&content, &format!("imgcull:{dim_name}"))
@@ -132,6 +128,7 @@ impl XmpSidecar {
                     sidecar.dimension_scores.push((dim_name.to_string(), v));
                 }
             }
+            sidecar.dimensions_list = Some(val);
         }
 
         // Extract xmp:Rating from attribute.
@@ -143,6 +140,9 @@ impl XmpSidecar {
                 sidecar.rating = Some(r);
             }
         }
+
+        // Store raw content for merge-on-write (moved, not cloned).
+        sidecar.raw_content = Some(content);
 
         Ok(sidecar)
     }
