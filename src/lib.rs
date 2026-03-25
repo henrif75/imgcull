@@ -60,10 +60,8 @@ pub fn setup_logging(
         let file_layer = fmt::layer()
             .with_writer(non_blocking)
             .with_ansi(false)
-            // Always log at debug regardless of --verbose/--quiet.
-            // Suppress noisy third-party crates (h2, hyper_util, reqwest)
-            // that embed ANSI codes in their span field values.
-            .with_filter(EnvFilter::new("warn,imgcull=debug"));
+            // Always capture full debug output regardless of --verbose/--quiet.
+            .with_filter(EnvFilter::new("debug"));
 
         tracing_subscriber::registry()
             .with(stderr_layer)
