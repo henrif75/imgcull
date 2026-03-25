@@ -40,16 +40,16 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 
 - `main.rs` — Entry point. Uses `mod cli` (private). Orchestrates config loading, CLI overrides, and dispatches to pipeline or init.
 - `lib.rs` — Crate root. Re-exports all modules as `pub mod`. Contains `setup_logging()`.
-- `llm.rs` — `DescriptionProvider` / `ScoringProvider` traits + 10 concrete provider structs (5 providers × 2 traits). Providers create a fresh Rig client per call.
+- `llm.rs` — `DescriptionProvider` / `ScoringProvider` traits + 5 provider structs (one per backend, each implementing both traits). Providers create a fresh Rig client per call.
 - `pipeline.rs` — `run_pipeline()` spawns a `tokio::spawn` per image, bounded by `Arc<Semaphore>`. Each task preprocesses, calls LLMs with retry, writes XMP.
 - `xmp.rs` — XMP sidecar read/merge/write using string manipulation (not a full XML DOM). Uses `quick-xml` only for validation.
 - `preprocessing.rs` — JPEG passthrough, RAW preview extraction (SOI/EOI marker scan), resize to 2048px max, base64 encode.
 - `config.rs` — TOML config + prompts loading with defaults. `Config::default()` and `Prompts::default()` provide built-in fallbacks.
-- `scoring.rs` — `ScoringResult` struct with 5 hardcoded dimension fields (`Option<f64>`). Derives `JsonSchema` for Rig compatibility.
+- `scoring.rs` — `ScoringResult` struct with 5 hardcoded dimension fields (`Option<f64>`) and an optional `critique` string. Derives `JsonSchema` for Rig compatibility.
 
 ### Provider abstraction
 
-`LlmClients` holds two boxed trait objects. The `build_*_provider()` functions in `llm.rs` match on provider name strings ("claude", "openai", "gemini", "deepseek", "ollama") and construct the appropriate Rig client. Adding a new provider means: add a struct pair, implement both traits, add match arms.
+`LlmClients` holds two boxed trait objects. The `build_*_provider()` functions in `llm.rs` match on provider name strings ("claude", "openai", "gemini", "deepseek", "ollama") and construct the appropriate Rig client. Adding a new provider means: add a struct, implement both traits, add match arms.
 
 ### Rig crate notes (rig-core 0.33)
 

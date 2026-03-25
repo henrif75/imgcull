@@ -79,7 +79,7 @@ async fn run_process(args: cli::ProcessArgs, describe_only: bool) -> Result<()> 
 
     let options = imgcull::pipeline::PipelineOptions {
         no_description: args.no_description,
-        no_rating: args.no_rating,
+        no_rating: args.no_rating || !config.default_settings.set_rating,
         backup: config.default_settings.backup,
         force: args.force,
         dry_run: args.dry_run,

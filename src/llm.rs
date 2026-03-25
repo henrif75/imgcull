@@ -42,8 +42,8 @@ pub trait ScoringProvider: Send + Sync {
 
 /// Holds pre-built description and scoring provider instances.
 pub struct LlmClients {
-    description_provider: Box<dyn DescriptionProvider + Send + Sync>,
-    scoring_provider: Box<dyn ScoringProvider + Send + Sync>,
+    description_provider: Box<dyn DualProvider>,
+    scoring_provider: Box<dyn DualProvider>,
 }
 
 impl LlmClients {
@@ -70,13 +70,10 @@ impl LlmClients {
             .get(score_provider_name)
             .with_context(|| format!("Unknown scoring provider: {score_provider_name}"))?;
 
-        let description_provider = build_description_provider(
-            desc_provider_name,
-            desc_config,
-            &prompts.description.system,
-        )?;
+        let description_provider =
+            build_provider(desc_provider_name, desc_config, &prompts.description.system)?;
         let scoring_provider =
-            build_scoring_provider(score_provider_name, score_config, &prompts.scoring.system)?;
+            build_provider(score_provider_name, score_config, &prompts.scoring.system)?;
 
         Ok(Self {
             description_provider,
@@ -255,158 +252,71 @@ async fn run_agent_prompt(
 }
 
 // ----------------------------------------------------------------
-// Provider structs — one per backend, each implements both traits
+// Provider structs — macro-generated for API-key providers,
+// manual for Ollama (different client construction).
 // ----------------------------------------------------------------
 
-struct ClaudeProvider {
-    api_key: String,
-    model: String,
-    preamble: String,
+/// Generate a provider struct with both `DescriptionProvider` and `ScoringProvider`
+/// impls for an API-key-based Rig provider.
+///
+/// All API-key providers follow the same pattern: `Client::new(&api_key)?` then
+/// `.agent(&model).preamble(&preamble).build()`.  Only the provider module path
+/// and the label used in error messages differ.
+macro_rules! api_key_provider {
+    ($struct_name:ident, $client_type:ty, $label:expr) => {
+        struct $struct_name {
+            api_key: String,
+            model: String,
+            preamble: String,
+        }
+
+        #[async_trait::async_trait]
+        impl DescriptionProvider for $struct_name {
+            async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
+                let agent = <$client_type>::new(&self.api_key)?
+                    .agent(&self.model)
+                    .preamble(&self.preamble)
+                    .build();
+                run_agent_prompt(
+                    agent,
+                    image_base64,
+                    prompt,
+                    concat!($label, " description request failed"),
+                )
+                .await
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl ScoringProvider for $struct_name {
+            async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
+                let agent = <$client_type>::new(&self.api_key)?
+                    .agent(&self.model)
+                    .preamble(&self.preamble)
+                    .build();
+                run_agent_prompt(
+                    agent,
+                    image_base64,
+                    prompt,
+                    concat!($label, " scoring request failed"),
+                )
+                .await
+                .and_then(|r: String| parse_scoring_result(&r))
+            }
+        }
+    };
 }
 
-#[async_trait::async_trait]
-impl DescriptionProvider for ClaudeProvider {
-    async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::anthropic::Client::new(&self.api_key)?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
-        run_agent_prompt(
-            agent,
-            image_base64,
-            prompt,
-            "Claude description request failed",
-        )
-        .await
-    }
-}
+api_key_provider!(ClaudeProvider, rig::providers::anthropic::Client, "Claude");
+api_key_provider!(OpenAiProvider, rig::providers::openai::Client, "OpenAI");
+api_key_provider!(GeminiProvider, rig::providers::gemini::Client, "Gemini");
+api_key_provider!(
+    DeepSeekProvider,
+    rig::providers::deepseek::Client,
+    "DeepSeek"
+);
 
-#[async_trait::async_trait]
-impl ScoringProvider for ClaudeProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::anthropic::Client::new(&self.api_key)?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
-        run_agent_prompt(agent, image_base64, prompt, "Claude scoring request failed")
-            .await
-            .and_then(|r| parse_scoring_result(&r))
-    }
-}
-
-struct OpenAiProvider {
-    api_key: String,
-    model: String,
-    preamble: String,
-}
-
-#[async_trait::async_trait]
-impl DescriptionProvider for OpenAiProvider {
-    async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::openai::Client::new(&self.api_key)?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
-        run_agent_prompt(
-            agent,
-            image_base64,
-            prompt,
-            "OpenAI description request failed",
-        )
-        .await
-    }
-}
-
-#[async_trait::async_trait]
-impl ScoringProvider for OpenAiProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::openai::Client::new(&self.api_key)?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
-        run_agent_prompt(agent, image_base64, prompt, "OpenAI scoring request failed")
-            .await
-            .and_then(|r| parse_scoring_result(&r))
-    }
-}
-
-struct GeminiProvider {
-    api_key: String,
-    model: String,
-    preamble: String,
-}
-
-#[async_trait::async_trait]
-impl DescriptionProvider for GeminiProvider {
-    async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::gemini::Client::new(&self.api_key)?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
-        run_agent_prompt(
-            agent,
-            image_base64,
-            prompt,
-            "Gemini description request failed",
-        )
-        .await
-    }
-}
-
-#[async_trait::async_trait]
-impl ScoringProvider for GeminiProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::gemini::Client::new(&self.api_key)?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
-        run_agent_prompt(agent, image_base64, prompt, "Gemini scoring request failed")
-            .await
-            .and_then(|r| parse_scoring_result(&r))
-    }
-}
-
-struct DeepSeekProvider {
-    api_key: String,
-    model: String,
-    preamble: String,
-}
-
-#[async_trait::async_trait]
-impl DescriptionProvider for DeepSeekProvider {
-    async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::deepseek::Client::new(&self.api_key)?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
-        run_agent_prompt(
-            agent,
-            image_base64,
-            prompt,
-            "DeepSeek description request failed",
-        )
-        .await
-    }
-}
-
-#[async_trait::async_trait]
-impl ScoringProvider for DeepSeekProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::deepseek::Client::new(&self.api_key)?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
-        run_agent_prompt(
-            agent,
-            image_base64,
-            prompt,
-            "DeepSeek scoring request failed",
-        )
-        .await
-        .and_then(|r| parse_scoring_result(&r))
-    }
-}
-
+/// Ollama uses a builder pattern with `Nothing` instead of an API key.
 struct OllamaProvider {
     base_url: String,
     model: String,
@@ -450,15 +360,18 @@ impl ScoringProvider for OllamaProvider {
 }
 
 // ----------------------------------------------------------------
-// Builder functions
+// Builder function
 // ----------------------------------------------------------------
 
-/// Build a [`DescriptionProvider`] for the named provider.
-fn build_description_provider(
+/// Build a provider instance for the named backend.
+///
+/// Returns a boxed trait object that implements both [`DescriptionProvider`]
+/// and [`ScoringProvider`].  The caller picks which trait to use.
+fn build_provider(
     name: &str,
     config: &ProviderConfig,
     preamble: &str,
-) -> Result<Box<dyn DescriptionProvider + Send + Sync>> {
+) -> Result<Box<dyn DualProvider>> {
     match name {
         "claude" => Ok(Box::new(ClaudeProvider {
             api_key: resolve_api_key(config)?,
@@ -488,49 +401,11 @@ fn build_description_provider(
             model: config.model.clone(),
             preamble: preamble.to_string(),
         })),
-        other => anyhow::bail!("Unsupported description provider: {other}"),
+        other => anyhow::bail!("Unsupported provider: {other}"),
     }
 }
 
-/// Build a [`ScoringProvider`] for the named provider.
-///
-/// All providers use the agent approach with JSON response parsing,
-/// since Rig's `Extractor` only accepts text prompts and cannot
-/// handle multimodal (image + text) input.
-fn build_scoring_provider(
-    name: &str,
-    config: &ProviderConfig,
-    preamble: &str,
-) -> Result<Box<dyn ScoringProvider + Send + Sync>> {
-    match name {
-        "claude" => Ok(Box::new(ClaudeProvider {
-            api_key: resolve_api_key(config)?,
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
-        "openai" => Ok(Box::new(OpenAiProvider {
-            api_key: resolve_api_key(config)?,
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
-        "gemini" => Ok(Box::new(GeminiProvider {
-            api_key: resolve_api_key(config)?,
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
-        "deepseek" => Ok(Box::new(DeepSeekProvider {
-            api_key: resolve_api_key(config)?,
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
-        "ollama" => Ok(Box::new(OllamaProvider {
-            base_url: config
-                .base_url
-                .clone()
-                .unwrap_or_else(|| "http://localhost:11434".to_string()),
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
-        other => anyhow::bail!("Unsupported scoring provider: {other}"),
-    }
-}
+/// Convenience super-trait so a single boxed object can serve as both
+/// description and scoring provider.
+trait DualProvider: DescriptionProvider + ScoringProvider {}
+impl<T: DescriptionProvider + ScoringProvider> DualProvider for T {}
