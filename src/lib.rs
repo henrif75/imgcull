@@ -55,7 +55,9 @@ pub fn setup_logging(
         let file_layer = fmt::layer()
             .with_writer(non_blocking)
             .with_ansi(false)
-            .with_filter(EnvFilter::new("debug"));
+            // Log imgcull events at debug; suppress noisy third-party crates
+            // (h2, hyper_util, reqwest) that embed ANSI codes in their spans.
+            .with_filter(EnvFilter::new("warn,imgcull=debug"));
 
         tracing_subscriber::registry()
             .with(stderr_layer)
