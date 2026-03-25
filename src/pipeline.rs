@@ -10,7 +10,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 use crate::config::{Config, Prompts};
 use crate::llm::LlmClients;
@@ -139,6 +139,11 @@ pub async fn run_pipeline(
                 }
             };
 
+            debug!(
+                "{filename}: preprocessed ({}KB base64)",
+                preprocessed.base64.len() / 1024
+            );
+
             // Read existing sidecar
             let sidecar_path = SidecarPath::for_image(&image_path);
             let mut sidecar = if sidecar_path.exists() {
@@ -167,8 +172,10 @@ pub async fn run_pipeline(
                 let desc_result =
                     retry_with_backoff(2, || async { c.describe(&b64, &tmpl).await }).await;
                 match desc_result {
-                    Ok(desc) => {
-                        sidecar.set_description(&desc);
+                    Ok(ref desc) => {
+                        debug!("{filename}: description received ({} chars)", desc.len());
+                        debug!("{filename}: description = {desc}");
+                        sidecar.set_description(desc);
                         summary
                             .described
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -197,8 +204,10 @@ pub async fn run_pipeline(
                     Ok(mut scores) => {
                         scores.clamp();
                         let overall = scores.overall_score(&dims);
+                        debug!("{filename}: scored {overall:.2} — {scores:?}");
                         let provider_info = format!("{}/{}", score_provider_name, score_model_name);
                         if let Some(ref critique) = scores.critique {
+                            debug!("{filename}: critique = {critique}");
                             sidecar.set_scoring_response(critique);
                         }
                         sidecar.set_scores(&scores, &dims, overall, &provider_info);
