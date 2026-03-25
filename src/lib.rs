@@ -20,13 +20,15 @@ use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::Subs
 /// - `verbose` → `debug`
 /// - default   → `warn`
 ///
-/// When `log_file` is provided an additional layer at `debug` level is written
-/// to that file using a non-blocking writer so the file handle is
-/// `Send + 'static`.
+/// When `log_file` is provided an additional file layer is appended to that
+/// path at `debug` level using a non-blocking writer.  The file layer always
+/// logs at debug regardless of `verbose` / `quiet` — those flags only control
+/// stderr output.  The file is opened in append mode so successive runs
+/// accumulate in the same log.
 ///
 /// # Errors
 ///
-/// Returns an error if the log file cannot be created.
+/// Returns an error if the log file cannot be opened.
 pub fn setup_logging(
     verbose: bool,
     quiet: bool,
@@ -46,25 +48,22 @@ pub fn setup_logging(
         .with_filter(EnvFilter::new(level));
 
     if let Some(log_path) = log_file {
-        let file = std::fs::File::create(log_path)?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)?;
         let (non_blocking, guard) = tracing_appender::non_blocking(file);
         // Leak the guard so the background thread is never dropped for the
         // lifetime of the process.
         std::mem::forget(guard);
 
-        let file_filter = if verbose {
-            // Match the console: log everything at debug including third-party crates.
-            EnvFilter::new("debug")
-        } else {
-            // Default: only imgcull at debug; suppress noisy third-party crates
-            // (h2, hyper_util, reqwest) that embed ANSI codes in their spans.
-            EnvFilter::new("warn,imgcull=debug")
-        };
-
         let file_layer = fmt::layer()
             .with_writer(non_blocking)
             .with_ansi(false)
-            .with_filter(file_filter);
+            // Always log at debug regardless of --verbose/--quiet.
+            // Suppress noisy third-party crates (h2, hyper_util, reqwest)
+            // that embed ANSI codes in their span field values.
+            .with_filter(EnvFilter::new("warn,imgcull=debug"));
 
         tracing_subscriber::registry()
             .with(stderr_layer)
