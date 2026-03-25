@@ -29,10 +29,11 @@ pub trait DescriptionProvider: Send + Sync {
 /// Scores a single image across the configured quality dimensions.
 #[async_trait::async_trait]
 pub trait ScoringProvider: Send + Sync {
-    /// Send `image_base64` together with `prompt` to the LLM.
+    /// Send `image_base64` together with `prompt` to the LLM and return a
+    /// structured [`ScoringResult`].
     ///
-    /// Returns the structured [`ScoringResult`] and the raw LLM response text.
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<(ScoringResult, String)>;
+    /// The result may include a `critique` field with a narrative analysis.
+    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult>;
 }
 
 // ----------------------------------------------------------------
@@ -98,8 +99,8 @@ impl LlmClients {
     /// `image_base64` must be a standard base64-encoded JPEG or PNG.
     /// `prompt` is the fully-rendered scoring prompt (dimensions + guidelines).
     ///
-    /// Returns the structured [`ScoringResult`] and the raw LLM response text.
-    pub async fn score(&self, image_base64: &str, prompt: &str) -> Result<(ScoringResult, String)> {
+    /// The result may include a `critique` field with a narrative analysis.
+    pub async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         self.scoring_provider.score(image_base64, prompt).await
     }
 }
@@ -282,14 +283,14 @@ impl DescriptionProvider for ClaudeProvider {
 
 #[async_trait::async_trait]
 impl ScoringProvider for ClaudeProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<(ScoringResult, String)> {
+    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::anthropic::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
         run_agent_prompt(agent, image_base64, prompt, "Claude scoring request failed")
             .await
-            .and_then(|raw| parse_scoring_result(&raw).map(|scores| (scores, raw)))
+            .and_then(|r| parse_scoring_result(&r))
     }
 }
 
@@ -318,14 +319,14 @@ impl DescriptionProvider for OpenAiProvider {
 
 #[async_trait::async_trait]
 impl ScoringProvider for OpenAiProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<(ScoringResult, String)> {
+    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::openai::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
         run_agent_prompt(agent, image_base64, prompt, "OpenAI scoring request failed")
             .await
-            .and_then(|raw| parse_scoring_result(&raw).map(|scores| (scores, raw)))
+            .and_then(|r| parse_scoring_result(&r))
     }
 }
 
@@ -354,14 +355,14 @@ impl DescriptionProvider for GeminiProvider {
 
 #[async_trait::async_trait]
 impl ScoringProvider for GeminiProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<(ScoringResult, String)> {
+    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::gemini::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
             .build();
         run_agent_prompt(agent, image_base64, prompt, "Gemini scoring request failed")
             .await
-            .and_then(|raw| parse_scoring_result(&raw).map(|scores| (scores, raw)))
+            .and_then(|r| parse_scoring_result(&r))
     }
 }
 
@@ -390,7 +391,7 @@ impl DescriptionProvider for DeepSeekProvider {
 
 #[async_trait::async_trait]
 impl ScoringProvider for DeepSeekProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<(ScoringResult, String)> {
+    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::deepseek::Client::new(&self.api_key)?
             .agent(&self.model)
             .preamble(&self.preamble)
@@ -402,7 +403,7 @@ impl ScoringProvider for DeepSeekProvider {
             "DeepSeek scoring request failed",
         )
         .await
-        .and_then(|raw| parse_scoring_result(&raw).map(|scores| (scores, raw)))
+        .and_then(|r| parse_scoring_result(&r))
     }
 }
 
@@ -434,7 +435,7 @@ impl DescriptionProvider for OllamaProvider {
 
 #[async_trait::async_trait]
 impl ScoringProvider for OllamaProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<(ScoringResult, String)> {
+    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
         let agent = rig::providers::ollama::Client::builder()
             .api_key(Nothing)
             .base_url(&self.base_url)
@@ -444,7 +445,7 @@ impl ScoringProvider for OllamaProvider {
             .build();
         run_agent_prompt(agent, image_base64, prompt, "Ollama scoring request failed")
             .await
-            .and_then(|raw| parse_scoring_result(&raw).map(|scores| (scores, raw)))
+            .and_then(|r| parse_scoring_result(&r))
     }
 }
 

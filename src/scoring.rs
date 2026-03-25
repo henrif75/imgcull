@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Result of LLM quality scoring across multiple dimensions.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ScoringResult {
     /// Focus quality, motion blur, camera shake (0.0--1.0).
     #[serde(default)]
@@ -21,6 +21,9 @@ pub struct ScoringResult {
     /// Emotional impact and storytelling (0.0--1.0).
     #[serde(default)]
     pub aesthetics: Option<f64>,
+    /// Free-text narrative critique from the LLM.
+    #[serde(default)]
+    pub critique: Option<String>,
 }
 
 impl ScoringResult {

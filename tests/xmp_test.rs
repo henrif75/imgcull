@@ -58,8 +58,7 @@ fn write_and_read_back() {
         sharpness: Some(0.90),
         exposure: Some(0.75),
         composition: Some(0.80),
-        subject_clarity: None,
-        aesthetics: None,
+        ..Default::default()
     };
 
     let overall = scores.overall_score(&dims);
@@ -108,10 +107,7 @@ fn has_scores_after_set_scores() {
     let dims = vec!["sharpness".to_string()];
     let scores = ScoringResult {
         sharpness: Some(0.85),
-        exposure: None,
-        composition: None,
-        subject_clarity: None,
-        aesthetics: None,
+        ..Default::default()
     };
 
     let mut sidecar = XmpSidecar::new();

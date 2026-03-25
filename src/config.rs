@@ -180,7 +180,13 @@ fn default_scoring_prompt() -> PromptEntry {
     PromptEntry {
         system: "You are an expert photography critic.".to_string(),
         template: "Analyze this image and score it on the following dimensions (each 0.0 to \
-                   1.0):\n\n{{dimensions}}\n\nScoring guidelines:\n{{guidelines}}"
+                   1.0):\n\n{{dimensions}}\n\nScoring guidelines:\n{{guidelines}}\n\n\
+                   Respond with a JSON object only. Use the dimension names as keys with \
+                   float scores as values, and include a \"critique\" key with a concise \
+                   narrative analysis. Example: \
+                   {\"sharpness\": 0.95, \"exposure\": 0.88, \"composition\": 0.75, \
+                   \"critique\": \"Sharp focus on the subject...\"}. \
+                   No prose outside the JSON — raw JSON only."
             .to_string(),
     }
 }

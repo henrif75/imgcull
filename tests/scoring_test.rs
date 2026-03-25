@@ -18,6 +18,7 @@ fn overall_score_all_dimensions() {
         composition: Some(0.7),
         subject_clarity: Some(0.9),
         aesthetics: Some(0.5),
+        ..Default::default()
     };
     let score = result.overall_score(&all_dimensions());
     let expected = (0.8 + 0.6 + 0.7 + 0.9 + 0.5) / 5.0;
@@ -29,9 +30,7 @@ fn overall_score_subset_of_dimensions() {
     let result = ScoringResult {
         sharpness: Some(0.8),
         exposure: Some(0.6),
-        composition: None,
-        subject_clarity: None,
-        aesthetics: None,
+        ..Default::default()
     };
     let dims: Vec<String> = vec!["sharpness".into(), "exposure".into()];
     let score = result.overall_score(&dims);
@@ -41,13 +40,7 @@ fn overall_score_subset_of_dimensions() {
 
 #[test]
 fn overall_score_no_matching_dimensions() {
-    let result = ScoringResult {
-        sharpness: None,
-        exposure: None,
-        composition: None,
-        subject_clarity: None,
-        aesthetics: None,
-    };
+    let result = ScoringResult::default();
     assert_eq!(result.overall_score(&all_dimensions()), 0.0);
 }
 
@@ -71,8 +64,8 @@ fn clamp_out_of_range_values() {
         sharpness: Some(1.5),
         exposure: Some(-0.3),
         composition: Some(0.5),
-        subject_clarity: None,
         aesthetics: Some(2.0),
+        ..Default::default()
     };
     result.clamp();
     assert_eq!(result.sharpness, Some(1.0));
@@ -86,10 +79,9 @@ fn clamp_out_of_range_values() {
 fn get_by_dimension_name() {
     let result = ScoringResult {
         sharpness: Some(0.8),
-        exposure: None,
         composition: Some(0.6),
         subject_clarity: Some(0.9),
-        aesthetics: None,
+        ..Default::default()
     };
     assert_eq!(result.get("sharpness"), Some(0.8));
     assert_eq!(result.get("exposure"), None);
