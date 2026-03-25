@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 cargo build                          # Build the project
-cargo test                           # Run all 49 tests (unit + integration)
+cargo test                           # Run all 51 tests (unit + integration)
 cargo test --test xmp_test           # Run a single test file
 cargo test test_preprocess_small     # Run a test by name substring
 cargo fmt                            # Format all code
@@ -39,7 +39,7 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 ### Module responsibilities
 
 - `main.rs` — Entry point. Uses `mod cli` (private). Orchestrates config loading, CLI overrides, and dispatches to pipeline or init.
-- `lib.rs` — Crate root. Re-exports all modules as `pub mod`. Contains `setup_logging()`.
+- `lib.rs` — Crate root. Re-exports all modules as `pub mod`. Contains `setup_logging()` with `AnsiStripWriter` to prevent ANSI contamination from the shared tracing registry span cache.
 - `llm.rs` — `DescriptionProvider` / `ScoringProvider` traits + 5 provider structs (one per backend, each implementing both traits). Providers create a fresh Rig client per call.
 - `pipeline.rs` — `run_pipeline()` spawns a `tokio::spawn` per image, bounded by `Arc<Semaphore>`. Each task preprocesses, calls LLMs with retry, writes XMP.
 - `xmp.rs` — XMP sidecar read/merge/write using string manipulation (not a full XML DOM). Uses `quick-xml` only for validation.
