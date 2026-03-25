@@ -52,12 +52,19 @@ pub fn setup_logging(
         // lifetime of the process.
         std::mem::forget(guard);
 
+        let file_filter = if verbose {
+            // Match the console: log everything at debug including third-party crates.
+            EnvFilter::new("debug")
+        } else {
+            // Default: only imgcull at debug; suppress noisy third-party crates
+            // (h2, hyper_util, reqwest) that embed ANSI codes in their spans.
+            EnvFilter::new("warn,imgcull=debug")
+        };
+
         let file_layer = fmt::layer()
             .with_writer(non_blocking)
             .with_ansi(false)
-            // Log imgcull events at debug; suppress noisy third-party crates
-            // (h2, hyper_util, reqwest) that embed ANSI codes in their spans.
-            .with_filter(EnvFilter::new("warn,imgcull=debug"));
+            .with_filter(file_filter);
 
         tracing_subscriber::registry()
             .with(stderr_layer)
