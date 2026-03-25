@@ -163,6 +163,7 @@ pub async fn run_pipeline(
             let needs_description =
                 !options_no_desc && (options_force || !sidecar.has_description());
             let needs_scoring = !options_no_score && (options_force || !sidecar.has_scores());
+            let mut had_llm_error = false;
 
             // Description
             if needs_description {
@@ -182,9 +183,7 @@ pub async fn run_pipeline(
                     }
                     Err(e) => {
                         warn!("Description failed for {filename}: {e:#}");
-                        summary
-                            .skipped_llm_error
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        had_llm_error = true;
                     }
                 }
             } else if !options_no_desc && sidecar.has_description() {
@@ -224,11 +223,16 @@ pub async fn run_pipeline(
                     }
                     Err(e) => {
                         warn!("Scoring failed for {filename}: {e:#}");
-                        summary
-                            .skipped_llm_error
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        had_llm_error = true;
                     }
                 }
+            }
+
+            // Count at most one LLM skip per image, not per failed stage.
+            if had_llm_error {
+                summary
+                    .skipped_llm_error
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
 
             // Backup & write — only when something actually changed.
