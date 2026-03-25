@@ -21,8 +21,6 @@ pub struct RunSummary {
     pub described: AtomicUsize,
     /// Number of images skipped because a description was already present.
     pub skipped_existing_description: AtomicUsize,
-    /// Number of images skipped because the file format is not supported.
-    pub skipped_unsupported: AtomicUsize,
     /// Number of images skipped due to an LLM API error.
     pub skipped_llm_error: AtomicUsize,
     /// Number of images skipped because the file could not be read.
@@ -41,7 +39,6 @@ impl RunSummary {
             scored: AtomicUsize::new(0),
             described: AtomicUsize::new(0),
             skipped_existing_description: AtomicUsize::new(0),
-            skipped_unsupported: AtomicUsize::new(0),
             skipped_llm_error: AtomicUsize::new(0),
             skipped_unreadable: AtomicUsize::new(0),
             best: Mutex::new(None),
@@ -72,10 +69,9 @@ impl RunSummary {
         let scored = self.scored.load(Ordering::Relaxed);
         let described = self.described.load(Ordering::Relaxed);
         let skip_desc = self.skipped_existing_description.load(Ordering::Relaxed);
-        let skip_unsup = self.skipped_unsupported.load(Ordering::Relaxed);
         let skip_llm = self.skipped_llm_error.load(Ordering::Relaxed);
         let skip_unread = self.skipped_unreadable.load(Ordering::Relaxed);
-        let skipped = skip_unsup + skip_llm + skip_unread;
+        let skipped = skip_llm + skip_unread;
         let processed = total - skipped;
 
         let avg = if scored > 0 {
@@ -95,9 +91,7 @@ impl RunSummary {
             eprintln!("  ✓ {described} described ({skip_desc} already had descriptions)");
         }
         if skipped > 0 {
-            eprintln!(
-                "  ⚠ {skipped} skipped ({skip_unsup} unsupported format, {skip_llm} LLM errors, {skip_unread} unreadable)"
-            );
+            eprintln!("  ⚠ {skipped} skipped ({skip_llm} LLM errors, {skip_unread} unreadable)");
         }
     }
 }
