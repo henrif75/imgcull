@@ -99,6 +99,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 - Contains at least one `<imgcull:sharpness>` (or other dimension) element
 - Contains `<imgcull:scored_at>` (ISO-8601 timestamp)
 - Contains `<imgcull:scored_by>` (provider/model string, e.g. `claude/claude-opus-4-5`)
+- Contains `<imgcull:original_filename>` with the source image filename (e.g. `small.jpg`)
+- Contains `<imgcull:dimensions>` listing the scored dimensions (e.g. `sharpness,exposure,composition,subject_clarity,aesthetics`)
+- Contains `<imgcull:scoring_response>` with a narrative critique from the LLM
 - Terminal output shows the filename with a star display (e.g. `★★★☆☆`)
 
 **Pass criteria:** All fields present and within valid ranges.

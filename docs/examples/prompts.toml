@@ -37,7 +37,10 @@ Analyze this image and score it on the following dimensions (each 0.0 to 1.0):
 Scoring guidelines:
 {{guidelines}}
 
-Return your scores as a JSON object with dimension names as keys.
+Respond with a JSON object only. Use the dimension names as keys with float \
+scores as values, and include a "critique" key with a concise narrative \
+analysis. Example: {"sharpness": 0.95, "exposure": 0.88, "critique": \
+"Sharp focus on the subject..."}. No prose outside the JSON — raw JSON only.
 """
 
 

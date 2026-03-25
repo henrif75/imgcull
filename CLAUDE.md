@@ -49,7 +49,7 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 
 ### Provider abstraction
 
-`LlmClients` holds two boxed trait objects. The `build_*_provider()` functions in `llm.rs` match on provider name strings ("claude", "openai", "gemini", "deepseek", "ollama") and construct the appropriate Rig client. Adding a new provider means: add a struct, implement both traits, add match arms.
+`LlmClients` holds two `Box<dyn DualProvider>` trait objects (`DualProvider: DescriptionProvider + ScoringProvider`). The `api_key_provider!` macro generates a struct + both trait impls for each API-key provider (Claude, OpenAI, Gemini, DeepSeek). Ollama is manual (different builder). A single `build_provider()` function matches on provider name strings and returns the boxed trait object. Adding a new provider means: add a struct (or macro invocation), implement both traits, add a match arm in `build_provider()`.
 
 ### Rig crate notes (rig-core 0.33)
 
