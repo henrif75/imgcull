@@ -6,7 +6,7 @@
 [![Build Status](https://img.shields.io/github/actions/workflow/status/henrif75/imgcull/ci.yml?branch=main)](https://github.com/henrif75/imgcull/actions)
 [![Version](https://img.shields.io/badge/version-0.1.0-orange.svg)](https://github.com/henrif75/imgcull/releases)
 
-![Banner or Screenshot](docs/banner.png)
+![imgcull — AI-powered image culling](docs/banner.svg)
 
 ---
 
