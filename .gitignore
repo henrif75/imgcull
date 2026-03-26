@@ -6,3 +6,4 @@ README_guidelines.md
 .env
 *.bak
 GEMINI.md
+.DS_Store
