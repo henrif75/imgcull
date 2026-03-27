@@ -25,6 +25,8 @@ async fn main() -> Result<()> {
 }
 
 async fn run_process(args: cli::ProcessArgs, describe_only: bool) -> Result<()> {
+    // Setup logging first so we can see any issues during config loading and client initialization.
+    // Logs will go to stderr by default, but can be configured to go to a file with --log.
     imgcull::setup_logging(args.verbose, args.quiet, args.log.as_deref())?;
 
     let config_dir = dirs::config_dir()
@@ -75,6 +77,7 @@ async fn run_process(args: cli::ProcessArgs, describe_only: bool) -> Result<()> 
         return Ok(());
     }
 
+    // Initialize LLM clients after confirming we have images to process and applying CLI overrides to the config.
     let clients = Arc::new(imgcull::llm::LlmClients::new(&config, &prompts)?);
 
     let options = imgcull::pipeline::PipelineOptions {
