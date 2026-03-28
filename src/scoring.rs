@@ -24,6 +24,9 @@ pub struct ScoringResult {
     /// Free-text narrative critique from the LLM.
     #[serde(default)]
     pub critique: Option<String>,
+    /// Photography keywords suggested by the LLM.
+    #[serde(default)]
+    pub keywords: Option<Vec<String>>,
 }
 
 impl ScoringResult {

@@ -209,6 +209,11 @@ pub async fn run_pipeline(
                             debug!("{filename}: critique = {critique}");
                             sidecar.set_scoring_response(critique);
                         }
+                        if let Some(ref keywords) = scores.keywords
+                            && !keywords.is_empty()
+                        {
+                            sidecar.set_keywords(keywords);
+                        }
                         sidecar.set_scores(&scores, &dims, overall, &provider_info);
 
                         let stars = score_to_stars(overall);

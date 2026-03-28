@@ -182,10 +182,14 @@ fn default_scoring_prompt() -> PromptEntry {
         template: "Analyze this image and score it on the following dimensions (each 0.0 to \
                    1.0):\n\n{{dimensions}}\n\nScoring guidelines:\n{{guidelines}}\n\n\
                    Respond with a JSON object only. Use the dimension names as keys with \
-                   float scores as values, and include a \"critique\" key with a concise \
-                   narrative analysis. Example: \
+                   float scores as values, and include: a \"critique\" key with a concise \
+                   narrative analysis, a \"keywords\" key with an array of 5-15 descriptive \
+                   photography keywords (genre, subject, mood, lighting, technique, location \
+                   type). Keywords are descriptive tags for image content, crucial for \
+                   organizing and discoverability. Example: \
                    {\"sharpness\": 0.95, \"exposure\": 0.88, \"composition\": 0.75, \
-                   \"critique\": \"Sharp focus on the subject...\"}. \
+                   \"critique\": \"Sharp focus on the subject...\", \
+                   \"keywords\": [\"portrait\", \"natural light\", \"outdoors\"]}. \
                    No prose outside the JSON — raw JSON only."
             .to_string(),
     }

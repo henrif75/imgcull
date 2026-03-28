@@ -117,6 +117,80 @@ fn has_scores_after_set_scores() {
     assert!(sidecar.has_scores());
 }
 
+#[test]
+fn write_and_read_back_keywords() {
+    let tmp = TempDir::new().unwrap();
+    let xmp_path = tmp.path().join("test.xmp");
+
+    let mut sidecar = XmpSidecar::new();
+    sidecar.set_keywords(&[
+        "portrait".to_string(),
+        "natural light".to_string(),
+        "outdoors".to_string(),
+    ]);
+    sidecar.write(&xmp_path).expect("should write");
+
+    // Verify raw XML structure.
+    let raw = std::fs::read_to_string(&xmp_path).unwrap();
+    assert!(raw.contains("<dc:subject>"));
+    assert!(raw.contains("<rdf:Bag>"));
+    assert!(raw.contains("<rdf:li>portrait</rdf:li>"));
+    assert!(raw.contains("<rdf:li>natural light</rdf:li>"));
+    assert!(raw.contains("<rdf:li>outdoors</rdf:li>"));
+
+    // Read back and verify.
+    let read_back = XmpSidecar::read(&xmp_path).expect("should parse written XMP");
+    assert_eq!(
+        read_back.keywords(),
+        &["portrait", "natural light", "outdoors"]
+    );
+}
+
+#[test]
+fn merge_replaces_existing_keywords() {
+    let tmp = TempDir::new().unwrap();
+    let xmp_path = tmp.path().join("photo.xmp");
+
+    // Write a sidecar with existing dc:subject keywords.
+    let existing = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description
+      xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <dc:subject>
+        <rdf:Bag>
+          <rdf:li>old-keyword-1</rdf:li>
+          <rdf:li>old-keyword-2</rdf:li>
+        </rdf:Bag>
+      </dc:subject>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+"#;
+    std::fs::write(&xmp_path, existing).unwrap();
+
+    // Read, replace keywords, write.
+    let mut sidecar = XmpSidecar::read(&xmp_path).expect("should parse");
+    assert_eq!(sidecar.keywords(), &["old-keyword-1", "old-keyword-2"]);
+
+    sidecar.set_keywords(&["new-keyword".to_string()]);
+    sidecar.write(&xmp_path).expect("should write");
+
+    let result = std::fs::read_to_string(&xmp_path).unwrap();
+    assert!(
+        !result.contains("old-keyword-1"),
+        "old keywords should be removed"
+    );
+    assert!(
+        result.contains("<rdf:li>new-keyword</rdf:li>"),
+        "new keyword should be present"
+    );
+
+    // Read back to verify.
+    let read_back = XmpSidecar::read(&xmp_path).expect("should parse merged output");
+    assert_eq!(read_back.keywords(), &["new-keyword"]);
+}
+
 /// A freshly-read sidecar that has not been modified must not be dirty.
 #[test]
 fn is_dirty_false_after_read() {
