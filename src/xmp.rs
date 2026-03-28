@@ -52,6 +52,8 @@ pub struct XmpSidecar {
     original_filename: Option<String>,
     /// Raw LLM response text from the scoring call.
     scoring_response: Option<String>,
+    /// Photography keywords, written as `dc:subject`.
+    keywords: Vec<String>,
     /// Whether any field has been modified since construction or last read.
     ///
     /// Used by the pipeline to skip writing when nothing has changed.
@@ -145,6 +147,25 @@ impl XmpSidecar {
             sidecar.dimensions_list = Some(val);
         }
 
+        // Extract dc:subject keywords.
+        if let Some(subj_start) = content.find("<dc:subject>")
+            && let Some(subj_end) = content[subj_start..].find("</dc:subject>")
+        {
+            let subj_block = &content[subj_start..subj_start + subj_end];
+            let mut search_from = 0;
+            while let Some(li_start) = subj_block[search_from..].find("<rdf:li>") {
+                let text_start = search_from + li_start + "<rdf:li>".len();
+                if let Some(li_end) = subj_block[text_start..].find("</rdf:li>") {
+                    sidecar
+                        .keywords
+                        .push(subj_block[text_start..text_start + li_end].to_string());
+                    search_from = text_start + li_end;
+                } else {
+                    break;
+                }
+            }
+        }
+
         // Extract xmp:Rating from attribute.
         if let Some(start) = content.find("xmp:Rating=\"") {
             let val_start = start + "xmp:Rating=\"".len();
@@ -232,6 +253,17 @@ impl XmpSidecar {
         self.dirty = true;
     }
 
+    /// Set photography keywords for `dc:subject`.
+    pub fn set_keywords(&mut self, keywords: &[String]) {
+        self.keywords = keywords.to_vec();
+        self.dirty = true;
+    }
+
+    /// Returns the photography keywords, if any.
+    pub fn keywords(&self) -> &[String] {
+        &self.keywords
+    }
+
     /// Write the XMP document to disk.
     ///
     /// If the sidecar was previously read from disk (i.e. `raw_content` is
@@ -268,6 +300,18 @@ fn build_imgcull_fields(sidecar: &XmpSidecar) -> String {
         ));
         fields.push_str("        </rdf:Alt>\n");
         fields.push_str("      </dc:description>\n");
+    }
+
+    // dc:subject (keywords)
+    if !sidecar.keywords.is_empty() {
+        fields.push_str("      <dc:subject>\n");
+        fields.push_str("        <rdf:Bag>\n");
+        for kw in &sidecar.keywords {
+            let escaped = escape(kw);
+            fields.push_str(&format!("          <rdf:li>{escaped}</rdf:li>\n"));
+        }
+        fields.push_str("        </rdf:Bag>\n");
+        fields.push_str("      </dc:subject>\n");
     }
 
     // imgcull:score
@@ -377,8 +421,9 @@ fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
         }
     }
 
-    // --- Remove existing dc:description block ---
+    // --- Remove existing dc:description and dc:subject blocks ---
     remove_element_block(&mut xml, "<dc:description>", "</dc:description>");
+    remove_element_block(&mut xml, "<dc:subject>", "</dc:subject>");
 
     // --- Remove existing imgcull:* elements ---
     // We iteratively remove any element whose tag starts with `<imgcull:`.
@@ -401,7 +446,7 @@ fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
         "xmlns:imgcull",
         "xmlns:imgcull=\"http://imgcull.dev/ns/1.0/\"",
     );
-    if sidecar.description.is_some() {
+    if sidecar.description.is_some() || !sidecar.keywords.is_empty() {
         ensure_namespace(
             &mut xml,
             "xmlns:dc",

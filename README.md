@@ -4,7 +4,7 @@
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/henrif75/imgcull#license)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/henrif75/imgcull/ci.yml?branch=main)](https://github.com/henrif75/imgcull/actions)
-[![Version](https://img.shields.io/badge/version-0.1.0-orange.svg)](https://github.com/henrif75/imgcull/releases)
+[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](https://github.com/henrif75/imgcull/releases)
 
 ![imgcull — AI-powered image culling](docs/banner.svg)
 
@@ -22,6 +22,7 @@ After a shoot, photographers face hundreds (or thousands) of raw files to review
 - **Configurable dimensions** — score on any subset of: sharpness, exposure, composition, subject clarity, aesthetics
 - **Parallel processing** — bounded concurrency with configurable worker count for fast batch runs
 - **Dry-run mode** — preview which files would be processed without making any LLM calls or file writes
+- **LLM-generated keywords** — photography keywords written to `dc:subject` in XMP sidecars, appearing automatically as Lightroom keywords
 - **Separate describe / score commands** — run description-only, scoring-only, or both in one pass
 
 ## 🛠 Tech Stack
@@ -147,6 +148,18 @@ dimensions = ["sharpness", "exposure", "composition", "subject_clarity", "aesthe
 ```
 
 Custom prompts can be edited in `prompts.toml` in the same config directory.
+
+---
+
+## 📋 Release Notes
+
+### v0.2.0
+
+- **Keywords** — the scoring prompt now requests 5-15 descriptive photography keywords (genre, subject, mood, lighting, technique, location type). Keywords are written to `dc:subject` in XMP sidecars and appear automatically as keywords in Adobe Lightroom Classic.
+
+### v0.1.0
+
+- Initial release with multi-provider LLM scoring, XMP sidecar output, and parallel processing.
 
 ---
 

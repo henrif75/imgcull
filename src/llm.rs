@@ -183,7 +183,7 @@ mod tests {
     use crate::scoring::ScoringResult;
 
     fn make_scoring_json() -> &'static str {
-        r#"{"sharpness": 0.8, "exposure": 0.7, "composition": 0.6, "subject_clarity": 0.9, "aesthetics": 0.5}"#
+        r#"{"sharpness": 0.8, "exposure": 0.7, "composition": 0.6, "subject_clarity": 0.9, "aesthetics": 0.5, "keywords": ["portrait", "natural light", "outdoors"]}"#
     }
 
     fn assert_scoring_result(result: &ScoringResult) {
@@ -221,6 +221,21 @@ mod tests {
     fn test_parse_no_json_returns_error() {
         let err = parse_scoring_result("No JSON here at all.").unwrap_err();
         assert!(err.to_string().contains("No JSON object found"));
+    }
+
+    #[test]
+    fn test_parse_json_without_keywords_backward_compat() {
+        let json = r#"{"sharpness": 0.8, "exposure": 0.7, "composition": 0.6, "subject_clarity": 0.9, "aesthetics": 0.5}"#;
+        let result = parse_scoring_result(json).unwrap();
+        assert!((result.sharpness.unwrap() - 0.8).abs() < 1e-9);
+        assert!(result.keywords.is_none());
+    }
+
+    #[test]
+    fn test_parse_json_with_keywords() {
+        let result = parse_scoring_result(make_scoring_json()).unwrap();
+        let keywords = result.keywords.unwrap();
+        assert_eq!(keywords, vec!["portrait", "natural light", "outdoors"]);
     }
 
     #[test]
