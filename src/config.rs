@@ -171,7 +171,8 @@ fn default_description_prompt() -> PromptEntry {
     PromptEntry {
         system: "You are a concise photography describer.".to_string(),
         template: "Describe this photograph in 1-3 sentences. Include the subject, setting, \
-                   lighting conditions, and mood. Be concise and factual."
+                   lighting conditions, and mood. Be concise and factual. \
+                   Output the description directly — no preamble, labels, or introductory text."
             .to_string(),
     }
 }
