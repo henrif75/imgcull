@@ -56,4 +56,29 @@ fn help_shows_all_subcommands() {
     assert!(stdout.contains("score"), "help should mention score");
     assert!(stdout.contains("describe"), "help should mention describe");
     assert!(stdout.contains("init"), "help should mention init");
+    assert!(stdout.contains("report"), "help should mention report");
+}
+
+#[test]
+fn report_subcommand_is_recognized() {
+    let output = imgcull_cmd()
+        .args(["report", "nonexistent_dir"])
+        .output()
+        .expect("failed to run imgcull");
+    assert!(
+        output.status.success(),
+        "report subcommand should succeed even with no images"
+    );
+}
+
+#[test]
+fn report_csv_format_is_accepted() {
+    let output = imgcull_cmd()
+        .args(["report", "--format", "csv", "nonexistent_dir"])
+        .output()
+        .expect("failed to run imgcull");
+    assert!(
+        output.status.success(),
+        "report with --format csv should succeed"
+    );
 }

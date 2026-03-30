@@ -19,8 +19,50 @@ pub enum Commands {
     Score(ProcessArgs),
     /// Generate scene descriptions only (no scoring)
     Describe(ProcessArgs),
+    /// Show a summary report of scored images
+    Report(ReportArgs),
     /// Create default config files
     Init,
+}
+
+/// Arguments for the report subcommand.
+#[derive(clap::Args, Debug)]
+pub struct ReportArgs {
+    /// Image files or directories to report on.
+    #[arg(required = true)]
+    pub paths: Vec<PathBuf>,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value = "table")]
+    pub format: ReportFormat,
+
+    /// Sort order.
+    #[arg(long, value_enum, default_value = "score")]
+    pub sort: SortBy,
+
+    /// Sort ascending instead of descending.
+    #[arg(long)]
+    pub asc: bool,
+}
+
+/// Output format for the report command.
+#[derive(clap::ValueEnum, Debug, Clone)]
+pub enum ReportFormat {
+    /// Aligned terminal table.
+    Table,
+    /// Comma-separated values.
+    Csv,
+}
+
+/// Sort order for the report command.
+#[derive(clap::ValueEnum, Debug, Clone)]
+pub enum SortBy {
+    /// Sort by overall score.
+    Score,
+    /// Sort by filename.
+    Filename,
+    /// Sort by star rating.
+    Rating,
 }
 
 /// Arguments shared by score and describe subcommands.
