@@ -6,6 +6,7 @@ pub mod discovery;
 pub mod llm;
 pub mod pipeline;
 pub mod preprocessing;
+pub mod report;
 pub mod retry;
 pub mod scoring;
 pub mod summary;

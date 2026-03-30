@@ -20,6 +20,18 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Score(args) => run_process(args, false).await,
         Commands::Describe(args) => run_process(args, true).await,
+        Commands::Report(args) => {
+            let format = match args.format {
+                cli::ReportFormat::Table => imgcull::report::OutputFormat::Table,
+                cli::ReportFormat::Csv => imgcull::report::OutputFormat::Csv,
+            };
+            let sort = match args.sort {
+                cli::SortBy::Score => imgcull::report::SortOrder::Score,
+                cli::SortBy::Filename => imgcull::report::SortOrder::Filename,
+                cli::SortBy::Rating => imgcull::report::SortOrder::Rating,
+            };
+            imgcull::report::run_report(&args.paths, format, sort, args.asc)
+        }
         Commands::Init => run_init(),
     }
 }

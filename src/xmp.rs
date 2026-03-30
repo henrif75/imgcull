@@ -264,6 +264,41 @@ impl XmpSidecar {
         &self.keywords
     }
 
+    /// Returns the XMP star rating (1–5), if set.
+    pub fn rating(&self) -> Option<u8> {
+        self.rating
+    }
+
+    /// Returns the overall imgcull score (0.0–1.0), if set.
+    pub fn overall_score(&self) -> Option<f64> {
+        self.overall_score
+    }
+
+    /// Returns per-dimension scores as `(name, value)` pairs.
+    pub fn dimension_scores(&self) -> &[(String, f64)] {
+        &self.dimension_scores
+    }
+
+    /// Returns the model identifier that produced the scores, if set.
+    pub fn scored_by(&self) -> Option<&str> {
+        self.scored_by.as_deref()
+    }
+
+    /// Returns the ISO-8601 timestamp of when scoring was performed, if set.
+    pub fn scored_at(&self) -> Option<&str> {
+        self.scored_at.as_deref()
+    }
+
+    /// Returns the raw LLM critique/response text, if set.
+    pub fn scoring_response(&self) -> Option<&str> {
+        self.scoring_response.as_deref()
+    }
+
+    /// Returns the original filename of the source image, if set.
+    pub fn original_filename(&self) -> Option<&str> {
+        self.original_filename.as_deref()
+    }
+
     /// Write the XMP document to disk.
     ///
     /// If the sidecar was previously read from disk (i.e. `raw_content` is

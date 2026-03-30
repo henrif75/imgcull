@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 cargo build                          # Build the project
-cargo test                           # Run all 51 tests (unit + integration)
+cargo test                           # Run all 66 tests (unit + integration)
 cargo test --test xmp_test           # Run a single test file
 cargo test test_preprocess_small     # Run a test by name substring
 cargo fmt                            # Format all code
@@ -45,7 +45,8 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 - `xmp.rs` — XMP sidecar read/merge/write using string manipulation (not a full XML DOM). Uses `quick-xml` only for validation.
 - `preprocessing.rs` — JPEG passthrough, RAW preview extraction (SOI/EOI marker scan), resize to 2048px max, base64 encode.
 - `config.rs` — TOML config + prompts loading with defaults. `Config::default()` and `Prompts::default()` provide built-in fallbacks.
-- `scoring.rs` — `ScoringResult` struct with 5 hardcoded dimension fields (`Option<f64>`) and an optional `critique` string. Derives `JsonSchema` for Rig compatibility.
+- `scoring.rs` — `ScoringResult` struct with 5 hardcoded dimension fields (`Option<f64>`), an optional `critique` string, and optional `keywords` array. Derives `JsonSchema` for Rig compatibility.
+- `report.rs` — `run_report()` reads XMP sidecars (both image-paired and standalone `.xmp` files) and outputs a summary table or CSV to stdout. No LLM calls required.
 
 ### Provider abstraction
 

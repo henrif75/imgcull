@@ -108,6 +108,20 @@ imgcull score --description-provider claude --scoring-provider ollama ~/Photos/
 imgcull score --dry-run ~/Photos/2026-03-shoot/
 ```
 
+### View a report of scored images
+
+```bash
+imgcull report ~/Photos/2026-03-shoot/
+```
+
+This reads all `.xmp` sidecar files in the directory and displays a summary table with scores, ratings, keywords, and model info. It also picks up standalone `.xmp` files (e.g., from different model runs).
+
+### Export results to CSV
+
+```bash
+imgcull report --format csv ~/Photos/2026-03-shoot/ > results.csv
+```
+
 ### Advanced options
 
 | Flag | Description |
@@ -155,6 +169,7 @@ Custom prompts can be edited in `prompts.toml` in the same config directory.
 
 ### v0.2.0
 
+- **Report command** — `imgcull report` reads XMP sidecars and displays a summary table or CSV with scores, ratings, keywords, and model info. Discovers both image-paired and standalone `.xmp` files, making it easy to compare results across different LLM providers.
 - **Keywords** — the scoring prompt now requests 5-15 descriptive photography keywords (genre, subject, mood, lighting, technique, location type). Keywords are written to `dc:subject` in XMP sidecars and appear automatically as keywords in Adobe Lightroom Classic.
 
 ### v0.1.0
