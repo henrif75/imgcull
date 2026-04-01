@@ -4,7 +4,7 @@
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/henrif75/imgcull#license)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/henrif75/imgcull/ci.yml?branch=main)](https://github.com/henrif75/imgcull/actions)
-[![Version](https://img.shields.io/badge/version-0.2.0-orange.svg)](https://github.com/henrif75/imgcull/releases)
+[![Version](https://img.shields.io/badge/version-0.2.1-orange.svg)](https://github.com/henrif75/imgcull/releases)
 
 ![imgcull — AI-powered image culling](docs/banner.svg)
 
@@ -81,7 +81,7 @@ cp ~/.config/imgcull/.env.example ~/.config/imgcull/.env
 imgcull score ~/Photos/2026-03-shoot/
 ```
 
-This processes every supported image (JPEG, CR2, NEF, ARW, DNG, ORF), writes a scene description to `dc:description` and a 1–5 star rating to `xmp:Rating` in each `.xmp` sidecar.
+This processes every supported image (JPEG and RAW formats: ARW, CR2, CR3, DNG, ERF, MEF, MOS, MRW, NEF, NRW, ORF, PEF, RAF, RW2, SR2, SRW), writes a scene description to `dc:description` and a 1–5 star rating to `xmp:Rating` in each `.xmp` sidecar.
 
 ### Generate descriptions only
 
@@ -166,6 +166,10 @@ Custom prompts can be edited in `prompts.toml` in the same config directory.
 ---
 
 ## 📋 Release Notes
+
+### v0.2.1
+
+- **Improved RAW support** — replaced manual JPEG-preview extraction with [`rawler`](https://crates.io/crates/rawler), adding support for CR3, RAF, RW2, PEF, and more formats while delivering higher-quality previews for existing formats.
 
 ### v0.2.0
 
