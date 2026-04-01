@@ -2,12 +2,13 @@
 //!
 //! This module handles loading, optionally resizing, and base64-encoding images
 //! so they can be sent to a vision LLM. Supported inputs are standard JPEG files
-//! and common RAW camera formats (CR2, NEF, ARW, DNG, ORF). RAW files are handled
-//! by extracting the embedded JPEG preview before further processing.
+//! and a wide range of RAW camera formats. RAW files are handled by extracting
+//! the embedded preview using the `rawler` library.
 
 use anyhow::{Context, Result};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use image::GenericImageView;
+use rawler::decoders::RawDecodeParams;
 use std::io::Cursor;
 use std::path::Path;
 
@@ -30,8 +31,8 @@ pub struct PreprocessedImage {
 
 /// Preprocess an image file for submission to a vision LLM.
 ///
-/// Reads the image at `path`, decodes it (extracting an embedded JPEG preview
-/// for RAW files), resizes it if either dimension exceeds `2048` pixels, and
+/// Reads the image at `path`, decodes it (extracting an embedded preview for
+/// RAW files), resizes it if either dimension exceeds `2048` pixels, and
 /// returns a [`PreprocessedImage`] containing the base64-encoded JPEG and a
 /// resize flag.
 ///
@@ -40,13 +41,13 @@ pub struct PreprocessedImage {
 /// | Extension | Handling |
 /// |-----------|---------|
 /// | `jpg`, `jpeg` | Read directly |
-/// | `cr2`, `nef`, `arw`, `dng`, `orf` | Embedded JPEG preview extracted |
+/// | `arw`, `cr2`, `cr3`, `dng`, `erf`, `mef`, `mos`, `mrw`, `nef`, `nrw`, `orf`, `pef`, `raf`, `rw2`, `sr2`, `srw` | Embedded preview extracted via `rawler` |
 ///
 /// # Errors
 ///
 /// Returns an error if:
 /// - The file cannot be read.
-/// - No embedded JPEG preview is found in a RAW file.
+/// - No embedded preview is found in a RAW file.
 /// - The image bytes cannot be decoded.
 /// - Re-encoding the resized image fails.
 /// - The file extension indicates an unsupported format.
@@ -57,73 +58,44 @@ pub fn preprocess_image(path: &Path) -> Result<PreprocessedImage> {
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
 
-    let image_bytes = match ext.as_str() {
+    let img = match ext.as_str() {
         "jpg" | "jpeg" => {
-            std::fs::read(path).with_context(|| format!("Cannot read {}", path.display()))?
+            let bytes =
+                std::fs::read(path).with_context(|| format!("Cannot read {}", path.display()))?;
+            image::load_from_memory(&bytes)
+                .with_context(|| format!("Cannot decode image: {}", path.display()))?
         }
-        "cr2" | "nef" | "arw" | "dng" | "orf" => extract_raw_preview(path)?,
+        "arw" | "cr2" | "cr3" | "dng" | "erf" | "mef" | "mos" | "mrw" | "nef" | "nrw" | "orf"
+        | "pef" | "raf" | "rw2" | "sr2" | "srw" => {
+            rawler::analyze::extract_preview_pixels(path, &RawDecodeParams::default())
+                .with_context(|| {
+                    format!("Cannot extract preview from RAW file: {}", path.display())
+                })?
+        }
         _ => anyhow::bail!("Unsupported format: {}", path.display()),
     };
-
-    let img = image::load_from_memory(&image_bytes)
-        .with_context(|| format!("Cannot decode image: {}", path.display()))?;
 
     let (width, height) = img.dimensions();
     let needs_resize = width > MAX_DIMENSION || height > MAX_DIMENSION;
 
-    let final_bytes = if needs_resize {
-        let resized = img.resize(
+    let final_img = if needs_resize {
+        img.resize(
             MAX_DIMENSION,
             MAX_DIMENSION,
             image::imageops::FilterType::Lanczos3,
-        );
-        let mut buf = Cursor::new(Vec::new());
-        resized
-            .write_to(&mut buf, image::ImageFormat::Jpeg)
-            .context("Failed to encode resized image")?;
-        buf.into_inner()
+        )
     } else {
-        image_bytes
+        img
     };
+
+    let mut buf = Cursor::new(Vec::new());
+    final_img
+        .write_to(&mut buf, image::ImageFormat::Jpeg)
+        .context("Failed to encode image as JPEG")?;
+    let final_bytes = buf.into_inner();
 
     Ok(PreprocessedImage {
         base64: BASE64_STANDARD.encode(&final_bytes),
         was_resized: needs_resize,
     })
-}
-
-/// Extract the embedded JPEG preview from a RAW camera file.
-///
-/// Searches the raw byte stream for a JPEG SOI marker (`FF D8`) and uses the
-/// last JPEG EOI marker (`FF D9`) to delimit the largest contiguous preview.
-/// Most manufacturer RAW formats (Canon CR2, Nikon NEF, Sony ARW, Adobe DNG,
-/// Olympus ORF) embed a full-resolution or near-full-resolution JPEG preview
-/// in this way.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be read, no SOI marker is found, no EOI
-/// marker is found after the SOI, or the computed boundaries are invalid.
-fn extract_raw_preview(path: &Path) -> Result<Vec<u8>> {
-    let data =
-        std::fs::read(path).with_context(|| format!("Cannot read RAW file: {}", path.display()))?;
-
-    // Find the first JPEG SOI marker (FF D8)
-    let start = data
-        .windows(2)
-        .position(|w| w == [0xFF, 0xD8])
-        .with_context(|| format!("No JPEG preview found in RAW file: {}", path.display()))?;
-
-    // Find the last JPEG EOI marker (FF D9) to capture the largest preview
-    let end = data
-        .windows(2)
-        .rposition(|w| w == [0xFF, 0xD9])
-        .map(|p| p + 2)
-        .with_context(|| format!("Malformed JPEG preview in RAW file: {}", path.display()))?;
-
-    if end <= start {
-        anyhow::bail!("Invalid JPEG preview boundaries in: {}", path.display());
-    }
-
-    Ok(data[start..end].to_vec())
 }

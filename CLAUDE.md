@@ -43,7 +43,7 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 - `llm.rs` — `DescriptionProvider` / `ScoringProvider` traits + 5 provider structs (one per backend, each implementing both traits). Providers create a fresh Rig client per call.
 - `pipeline.rs` — `run_pipeline()` spawns a `tokio::spawn` per image, bounded by `Arc<Semaphore>`. Each task preprocesses, calls LLMs with retry, writes XMP.
 - `xmp.rs` — XMP sidecar read/merge/write using string manipulation (not a full XML DOM). Uses `quick-xml` only for validation.
-- `preprocessing.rs` — JPEG passthrough, RAW preview extraction (SOI/EOI marker scan), resize to 2048px max, base64 encode.
+- `preprocessing.rs` — JPEG passthrough, RAW preview extraction via `rawler` (supports arw, cr2, cr3, dng, nef, orf, raf, rw2, and more), resize to 2048px max, base64 encode.
 - `config.rs` — TOML config + prompts loading with defaults. `Config::default()` and `Prompts::default()` provide built-in fallbacks.
 - `scoring.rs` — `ScoringResult` struct with 5 hardcoded dimension fields (`Option<f64>`), an optional `critique` string, and optional `keywords` array. Derives `JsonSchema` for Rig compatibility.
 - `report.rs` — `run_report()` reads XMP sidecars (both image-paired and standalone `.xmp` files) and outputs a summary table or CSV to stdout. No LLM calls required.

@@ -14,12 +14,30 @@ pub mod xmp;
 
 use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
+/// Global progress bar used by [`ProgressBarWriter`] to route log lines above
+/// the bar.  Set once via [`attach_progress_bar`] when the pipeline starts.
+static PROGRESS_BAR: std::sync::OnceLock<indicatif::ProgressBar> = std::sync::OnceLock::new();
+
+/// Register a progress bar so that subsequent log lines (warn/error on stderr)
+/// are printed above it via [`indicatif::ProgressBar::println`] instead of
+/// being written raw to stderr and corrupting the bar display.
+///
+/// Must be called after [`setup_logging`] and before the pipeline starts
+/// emitting tracing events.  Calling more than once per process has no effect.
+pub fn attach_progress_bar(pb: indicatif::ProgressBar) {
+    let _ = PROGRESS_BAR.set(pb);
+}
+
 /// Initialise the global tracing subscriber.
 ///
 /// A stderr layer is always installed at the level chosen by `verbose` / `quiet`:
 /// - `quiet`   → `error`
 /// - `verbose` → `debug`
 /// - default   → `warn`
+///
+/// When [`attach_progress_bar`] has been called, the stderr layer routes log
+/// lines through the progress bar's `println` method so they appear above the
+/// bar without corrupting it.
 ///
 /// When `log_file` is provided an additional file layer is appended to that
 /// path at `debug` level using a non-blocking writer.  The file layer always
@@ -47,10 +65,15 @@ pub fn setup_logging(
         "warn"
     };
 
+    // Suppress rawler's internal diagnostics on stderr — they are noisy and not
+    // actionable by the user (e.g. "Decoder has no preview image support").
+    // The file log layer still captures them at debug level for troubleshooting.
+    let stderr_filter = format!("{level},rawler=off");
     let stderr_layer = fmt::layer()
-        .with_writer(std::io::stderr)
+        .with_writer(ProgressBarWriterFactory)
         .with_target(false)
-        .with_filter(EnvFilter::new(level));
+        .with_ansi(false)
+        .with_filter(EnvFilter::new(stderr_filter));
 
     if let Some(log_path) = log_file {
         let file = std::fs::OpenOptions::new()
@@ -78,6 +101,59 @@ pub fn setup_logging(
     }
 
     Ok(())
+}
+
+/// Factory that creates a [`ProgressBarWriter`] per tracing event.
+///
+/// `tracing-subscriber`'s fmt layer calls [`fmt::MakeWriter::make_writer`]
+/// once per log event, writes all formatted bytes to the returned writer, then
+/// calls [`std::io::Write::flush`].  Buffering in the per-event writer and
+/// flushing in one shot avoids multiple [`indicatif::ProgressBar::println`]
+/// calls (which would each re-render the bar and leave ghost lines).
+struct ProgressBarWriterFactory;
+
+/// Per-event buffered writer.  Accumulates bytes during the event and emits
+/// them as a single [`indicatif::ProgressBar::println`] call on flush.
+struct ProgressBarWriter(Vec<u8>);
+
+impl std::io::Write for ProgressBarWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        if let Some(pb) = PROGRESS_BAR.get() {
+            let s = String::from_utf8_lossy(&self.0);
+            let line = s.trim_end_matches('\n');
+            if !line.is_empty() {
+                pb.println(line);
+            }
+        } else {
+            std::io::stderr().write_all(&self.0)?;
+            std::io::stderr().flush()?;
+        }
+        self.0.clear();
+        Ok(())
+    }
+}
+
+impl Drop for ProgressBarWriter {
+    fn drop(&mut self) {
+        // Flush any remaining buffered bytes that were not yet emitted.  This
+        // ensures output is not silently dropped if the fmt layer does not call
+        // flush() explicitly (behaviour varies across tracing-subscriber versions).
+        use std::io::Write as _;
+        let _ = self.flush();
+    }
+}
+
+impl<'a> fmt::MakeWriter<'a> for ProgressBarWriterFactory {
+    type Writer = ProgressBarWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        ProgressBarWriter(Vec::new())
+    }
 }
 
 /// A writer wrapper that strips ANSI escape sequences before forwarding to
