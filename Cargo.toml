@@ -1,6 +1,6 @@
 [package]
 name = "imgcull"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "AI-powered image culling tool using vision LLMs"
 license = "MIT OR Apache-2.0"
@@ -15,6 +15,7 @@ schemars = "1"
 toml = "1"
 quick-xml = "0.39"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+rawler = "0.7"
 base64 = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

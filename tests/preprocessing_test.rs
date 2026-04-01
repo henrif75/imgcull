@@ -51,25 +51,14 @@ fn test_preprocess_unreadable_file_returns_error() {
 }
 
 #[test]
-fn test_preprocess_raw_with_embedded_jpeg() {
-    // Test RAW extraction through preprocess_image using a fake .cr2 file
-    // that contains a real, valid embedded JPEG.
+fn test_preprocess_invalid_raw_returns_error() {
+    // rawler requires a structurally valid RAW file; garbage data should fail gracefully.
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("fake.cr2");
+    std::fs::write(&path, &[0u8; 100]).unwrap();
 
-    // Generate a real tiny JPEG in memory using the image crate
-    let img = image::ImageBuffer::from_fn(10u32, 10u32, |_, _| image::Rgb([64u8, 128, 192]));
-    let mut jpeg_bytes = Vec::new();
-    let mut cursor = std::io::Cursor::new(&mut jpeg_bytes);
-    img.write_to(&mut cursor, image::ImageFormat::Jpeg).unwrap();
-
-    // Build a fake RAW file: 100 bytes of garbage, then the real JPEG
-    let mut raw_data: Vec<u8> = vec![0x00; 100];
-    raw_data.extend_from_slice(&jpeg_bytes);
-    std::fs::write(&path, &raw_data).unwrap();
-
-    let result = preprocess_image(&path).unwrap();
-    assert!(!result.base64.is_empty());
+    let result = preprocess_image(&path);
+    assert!(result.is_err());
 }
 
 #[test]

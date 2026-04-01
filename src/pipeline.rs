@@ -5,6 +5,7 @@
 //! an XMP sidecar.  Parallelism is bounded by a semaphore whose width is read
 //! from the `concurrency` field in [`Config`]'s default settings.
 
+use crate::attach_progress_bar;
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
@@ -71,6 +72,8 @@ pub async fn run_pipeline(
     pb.set_style(
         ProgressStyle::with_template("[{pos}/{len}] {msg} {bar:40.cyan/blue} {eta}").unwrap(),
     );
+    // Route tracing warn/error output above the progress bar.
+    attach_progress_bar(pb.clone());
 
     summary
         .total
