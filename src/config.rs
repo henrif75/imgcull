@@ -180,15 +180,17 @@ fn default_description_prompt() -> PromptEntry {
 fn default_scoring_prompt() -> PromptEntry {
     PromptEntry {
         system: "You are an expert photography critic.".to_string(),
-        template: "Analyze this image and score it on the following dimensions (each 0.0 to \
-                   1.0):\n\n{{dimensions}}\n\nScoring guidelines:\n{{guidelines}}\n\n\
+        template: "Analyze this image and score it on the following dimensions (each 0.00 to \
+                   1.00, use two decimal places with 0.01 precision — avoid rounding to \
+                   the nearest 0.05):\n\n{{dimensions}}\n\nScoring guidelines:\n\
+                   {{guidelines}}\n\n\
                    Respond with a JSON object only. Use the dimension names as keys with \
                    float scores as values, and include: a \"critique\" key with a concise \
                    narrative analysis, a \"keywords\" key with an array of 5-15 descriptive \
                    photography keywords (genre, subject, mood, lighting, technique, location \
                    type). Keywords are descriptive tags for image content, crucial for \
                    organizing and discoverability. Example: \
-                   {\"sharpness\": 0.95, \"exposure\": 0.88, \"composition\": 0.75, \
+                   {\"sharpness\": 0.82, \"exposure\": 0.67, \"composition\": 0.73, \
                    \"critique\": \"Sharp focus on the subject...\", \
                    \"keywords\": [\"portrait\", \"natural light\", \"outdoors\"]}. \
                    No prose outside the JSON — raw JSON only."
@@ -200,23 +202,37 @@ fn default_guidelines() -> HashMap<String, String> {
     let mut m = HashMap::new();
     m.insert(
         "sharpness".to_string(),
-        "1.0 = tack sharp on subject, 0.0 = completely blurry".to_string(),
+        "1.0 = tack sharp on subject, 0.7 = sharp with minor softness, 0.5 = noticeably \
+         soft but usable, 0.3 = significant blur, 0.0 = completely blurry"
+            .to_string(),
     );
     m.insert(
         "exposure".to_string(),
-        "1.0 = perfectly exposed, 0.0 = severely over/underexposed".to_string(),
+        "1.0 = perfectly exposed with full tonal range, 0.7 = slight highlight or shadow \
+         clipping, 0.5 = moderately over/underexposed but recoverable, 0.3 = heavy clipping \
+         with lost detail, 0.0 = severely over/underexposed"
+            .to_string(),
     );
     m.insert(
         "composition".to_string(),
-        "1.0 = excellent framing and balance, 0.0 = poorly composed".to_string(),
+        "1.0 = excellent framing, balance, and visual flow, 0.7 = good composition with \
+         minor distractions, 0.5 = acceptable but unremarkable framing, 0.3 = awkward \
+         cropping or cluttered, 0.0 = poorly composed"
+            .to_string(),
     );
     m.insert(
         "subject_clarity".to_string(),
-        "1.0 = subject immediately clear, 0.0 = no discernible subject".to_string(),
+        "1.0 = subject immediately clear and compelling, 0.7 = subject identifiable with \
+         minor distractions, 0.5 = subject present but competing elements, 0.3 = subject \
+         ambiguous, 0.0 = no discernible subject"
+            .to_string(),
     );
     m.insert(
         "aesthetics".to_string(),
-        "1.0 = visually stunning, 0.0 = no aesthetic appeal".to_string(),
+        "1.0 = visually stunning and emotionally resonant, 0.7 = pleasing with strong \
+         visual elements, 0.5 = average visual appeal, 0.3 = below average with weak visual \
+         interest, 0.0 = no aesthetic appeal"
+            .to_string(),
     );
     m
 }

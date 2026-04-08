@@ -25,14 +25,16 @@ fn discovers_jpeg_files() {
 #[test]
 fn discovers_raw_files() {
     let dir = TempDir::new().unwrap();
-    touch(&dir, "a.cr2");
-    touch(&dir, "b.nef");
-    touch(&dir, "c.arw");
-    touch(&dir, "d.dng");
-    touch(&dir, "e.orf");
+    let raw_exts = [
+        "arw", "cr2", "cr3", "dng", "erf", "mef", "mos", "mrw", "nef", "nrw", "orf", "pef", "raf",
+        "rw2", "sr2", "srw",
+    ];
+    for ext in raw_exts {
+        touch(&dir, &format!("sample.{ext}"));
+    }
 
     let found = discover_images(&[dir.path().to_path_buf()]);
-    assert_eq!(found.len(), 5);
+    assert_eq!(found.len(), raw_exts.len());
 }
 
 #[test]

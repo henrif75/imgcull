@@ -6,7 +6,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Supported image file extensions (lowercase).
-pub const SUPPORTED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "cr2", "nef", "arw", "dng", "orf"];
+///
+/// Must stay in sync with the match arms in
+/// [`crate::preprocessing::preprocess_image`].
+pub const SUPPORTED_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", // JPEG
+    "arw", "cr2", "cr3", "dng", "erf", "mef", "mos", "mrw", "nef", "nrw", "orf", "pef", "raf",
+    "rw2", "sr2", "srw", // RAW formats handled via rawler
+];
 
 /// Returns `true` if the file at `path` has a supported image extension (case-insensitive).
 pub fn is_supported(path: &Path) -> bool {

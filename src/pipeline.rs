@@ -129,18 +129,31 @@ pub async fn run_pipeline(
                 return;
             }
 
-            // Preprocess
-            let preprocessed = match preprocess_image(&image_path) {
-                Ok(p) => p,
-                Err(e) => {
-                    warn!("Skipping {filename}: {e}");
-                    summary
-                        .skipped_unreadable
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    pb.inc(1);
-                    return;
-                }
-            };
+            // Preprocess on a blocking worker — fs read, RAW decode, resize
+            // and JPEG re-encode are all CPU/IO bound and would otherwise
+            // stall tokio workers.
+            let preprocess_path = image_path.clone();
+            let preprocessed =
+                match tokio::task::spawn_blocking(move || preprocess_image(&preprocess_path)).await
+                {
+                    Ok(Ok(p)) => p,
+                    Ok(Err(e)) => {
+                        warn!("Skipping {filename}: {e}");
+                        summary
+                            .skipped_unreadable
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        pb.inc(1);
+                        return;
+                    }
+                    Err(e) => {
+                        error!("Preprocess task panicked for {filename}: {e}");
+                        summary
+                            .skipped_unreadable
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        pb.inc(1);
+                        return;
+                    }
+                };
 
             debug!(
                 "{filename}: preprocessed ({}KB base64)",

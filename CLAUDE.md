@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 cargo build                          # Build the project
-cargo test                           # Run all 66 tests (unit + integration)
+cargo test                           # Run all unit + integration tests
 cargo test --test xmp_test           # Run a single test file
 cargo test test_preprocess_small     # Run a test by name substring
 cargo fmt                            # Format all code
@@ -35,17 +35,23 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 - **XMP merge, not overwrite**: When a sidecar already exists (e.g., from Lightroom), `write()` injects/replaces only imgcull-managed fields (`dc:description`, `xmp:Rating`, `imgcull:*`) and preserves all other XML content. The `raw_content` field on `XmpSidecar` stores the original file for merging.
 - **Dirty tracking**: `XmpSidecar` tracks whether any modifications were made. The pipeline skips backup+write for unchanged sidecars.
 - **Dry-run skips LLM client construction** entirely — handled in `main.rs` before `LlmClients::new()`, so no API keys are needed.
+- **Scoring precision**: The default scoring prompt requests 0.01 granularity and provides midpoint anchors (0.3, 0.5, 0.7) in each dimension's guideline, not just the extremes. This matters because weaker models (e.g. gemma3:27b) tend to quantize to 0.05 without the explicit instruction. Stronger models (gemma4:31b, Claude, GPT-4o) follow it.
+- **Preprocess runs on `spawn_blocking`**: RAW decode + resize + JPEG encode is blocking work; wrapping it keeps tokio workers free for the concurrent LLM calls.
 
 ### Module responsibilities
 
-- `main.rs` — Entry point. Uses `mod cli` (private). Orchestrates config loading, CLI overrides, and dispatches to pipeline or init.
-- `lib.rs` — Crate root. Re-exports all modules as `pub mod`. Contains `setup_logging()` with `AnsiStripWriter` to prevent ANSI contamination from the shared tracing registry span cache.
+- `main.rs` — Entry point. Uses `mod cli` (private). Orchestrates config loading, CLI overrides, and dispatches to pipeline, report, or init.
+- `cli.rs` — Private `clap` command/argument definitions used by `main.rs`.
+- `lib.rs` — Crate root. Re-exports all modules as `pub mod`. Contains `setup_logging()` with an internal ANSI-stripping writer to prevent ANSI contamination from the shared tracing registry span cache.
 - `llm.rs` — `DescriptionProvider` / `ScoringProvider` traits + 5 provider structs (one per backend, each implementing both traits). Providers create a fresh Rig client per call.
-- `pipeline.rs` — `run_pipeline()` spawns a `tokio::spawn` per image, bounded by `Arc<Semaphore>`. Each task preprocesses, calls LLMs with retry, writes XMP.
+- `pipeline.rs` — `run_pipeline()` spawns a `tokio::spawn` per image, bounded by `Arc<Semaphore>`. Each task preprocesses (via `spawn_blocking`), calls LLMs with retry, writes XMP.
+- `preprocessing.rs` — JPEG passthrough, RAW preview extraction via `rawler` (17 formats: arw, cr2, cr3, dng, erf, mef, mos, mrw, nef, nrw, orf, pef, raf, rw2, sr2, srw), resize to 2048px max, base64 encode.
+- `discovery.rs` — Walks directories and filters by extension. `SUPPORTED_EXTENSIONS` must stay in sync with `preprocessing::preprocess_image`'s match arms.
 - `xmp.rs` — XMP sidecar read/merge/write using string manipulation (not a full XML DOM). Uses `quick-xml` only for validation.
-- `preprocessing.rs` — JPEG passthrough, RAW preview extraction via `rawler` (supports arw, cr2, cr3, dng, nef, orf, raf, rw2, and more), resize to 2048px max, base64 encode.
 - `config.rs` — TOML config + prompts loading with defaults. `Config::default()` and `Prompts::default()` provide built-in fallbacks.
 - `scoring.rs` — `ScoringResult` struct with 5 hardcoded dimension fields (`Option<f64>`), an optional `critique` string, and optional `keywords` array. Derives `JsonSchema` for Rig compatibility.
+- `retry.rs` — Generic `retry_with_backoff(max_attempts, op)` used by the pipeline for both description and scoring LLM calls.
+- `summary.rs` — `RunSummary` with atomic counters aggregated across parallel tasks and a `display()` that prints the run summary to stderr.
 - `report.rs` — `run_report()` reads XMP sidecars (both image-paired and standalone `.xmp` files) and outputs a summary table or CSV to stdout. No LLM calls required.
 
 ### Provider abstraction
