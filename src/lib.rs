@@ -46,8 +46,8 @@ pub fn attach_progress_bar(pb: indicatif::ProgressBar) {
 /// accumulate in the same log.
 ///
 /// ANSI escape codes that leak from the shared tracing registry span cache
-/// (when the stderr layer has ANSI enabled) are stripped by wrapping the file
-/// in an [`AnsiStripWriter`].
+/// (when the stderr layer has ANSI enabled) are stripped before they reach
+/// the file via an internal writer wrapper.
 ///
 /// # Errors
 ///
