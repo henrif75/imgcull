@@ -55,7 +55,7 @@ fn test_preprocess_invalid_raw_returns_error() {
     // rawler requires a structurally valid RAW file; garbage data should fail gracefully.
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("fake.cr2");
-    std::fs::write(&path, &[0u8; 100]).unwrap();
+    std::fs::write(&path, [0u8; 100]).unwrap();
 
     let result = preprocess_image(&path);
     assert!(result.is_err());
