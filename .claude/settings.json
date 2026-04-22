@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; case \"$f\" in *.rs) rustfmt --edition 2024 \"$f\" ;; esac; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit:*)",
+            "command": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test || exit 2",
+            "timeout": 300,
+            "statusMessage": "Running cargo fmt/clippy/test pre-commit gate..."
+          }
+        ]
+      }
+    ]
+  }
+}
