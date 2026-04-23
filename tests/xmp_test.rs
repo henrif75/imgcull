@@ -1,25 +1,19 @@
 use std::path::Path;
 
 use imgcull::scoring::ScoringResult;
-use imgcull::xmp::{SidecarPath, XmpSidecar, backup_sidecar};
+use imgcull::xmp::{XmpSidecar, backup_sidecar, sidecar_for_image};
 use tempfile::TempDir;
 
 #[test]
 fn sidecar_path_from_jpeg() {
     let path = Path::new("photos/IMG_1234.jpg");
-    assert_eq!(
-        SidecarPath::for_image(path),
-        Path::new("photos/IMG_1234.xmp")
-    );
+    assert_eq!(sidecar_for_image(path), Path::new("photos/IMG_1234.xmp"));
 }
 
 #[test]
 fn sidecar_path_from_raw() {
     let path = Path::new("photos/IMG_5678.CR2");
-    assert_eq!(
-        SidecarPath::for_image(path),
-        Path::new("photos/IMG_5678.xmp")
-    );
+    assert_eq!(sidecar_for_image(path), Path::new("photos/IMG_5678.xmp"));
 }
 
 #[test]
@@ -200,6 +194,34 @@ fn is_dirty_false_after_read() {
         !sidecar.is_dirty(),
         "sidecar should not be dirty after a plain read"
     );
+}
+
+/// Re-setting the original filename to the value already stored must not mark
+/// the sidecar dirty — otherwise every re-run of an already-processed folder
+/// would rewrite every `.xmp` with identical content.
+#[test]
+fn set_original_filename_noop_does_not_dirty() {
+    let tmp = TempDir::new().unwrap();
+    let xmp_path = tmp.path().join("photo.xmp");
+
+    // Seed a sidecar on disk with an original filename.
+    let mut sidecar = XmpSidecar::new();
+    sidecar.set_original_filename("photo.jpg");
+    sidecar.set_description("seed");
+    sidecar.write(&xmp_path).unwrap();
+
+    // Re-read and set to the same value — must be a no-op.
+    let mut reread = XmpSidecar::read(&xmp_path).expect("should parse");
+    assert!(!reread.is_dirty(), "sidecar should not be dirty after read");
+    reread.set_original_filename("photo.jpg");
+    assert!(
+        !reread.is_dirty(),
+        "setting original_filename to the same value must not dirty"
+    );
+
+    // Setting to a new value must dirty.
+    reread.set_original_filename("photo-renamed.jpg");
+    assert!(reread.is_dirty(), "changing original_filename must dirty");
 }
 
 /// Writing a sidecar that was read from an existing file with third-party

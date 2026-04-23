@@ -19,7 +19,7 @@ use crate::preprocessing::preprocess_image;
 use crate::retry::retry_with_backoff;
 use crate::scoring::score_to_stars;
 use crate::summary::RunSummary;
-use crate::xmp::{SidecarPath, XmpSidecar, backup_sidecar};
+use crate::xmp::{XmpSidecar, backup_sidecar, sidecar_for_image};
 
 /// Options that control which pipeline stages run and how output is handled.
 pub struct PipelineOptions {
@@ -33,8 +33,6 @@ pub struct PipelineOptions {
     pub force: bool,
     /// Print what would be done without actually writing any files.
     pub dry_run: bool,
-    /// Only write scores; skip the description stage.
-    pub score_only: bool,
     /// Only write descriptions; skip the scoring stage.
     pub describe_only: bool,
 }
@@ -106,7 +104,7 @@ pub async fn run_pipeline(
         let score_provider_name = score_provider_name.clone();
         let score_model_name = score_model_name.clone();
         let pb = pb.clone();
-        let options_no_desc = options.no_description || options.score_only;
+        let options_no_desc = options.no_description;
         let options_no_score = options.describe_only;
         let options_no_rating = options.no_rating || options.describe_only;
         let options_backup = options.backup;
@@ -161,7 +159,7 @@ pub async fn run_pipeline(
             );
 
             // Read existing sidecar
-            let sidecar_path = SidecarPath::for_image(&image_path);
+            let sidecar_path = sidecar_for_image(&image_path);
             let mut sidecar = if sidecar_path.exists() {
                 match XmpSidecar::read(&sidecar_path) {
                     Ok(s) => s,
@@ -183,11 +181,10 @@ pub async fn run_pipeline(
 
             // Description
             if needs_description {
-                let b64 = preprocessed.base64.clone();
-                let tmpl = desc_template.clone();
-                let c = clients.clone();
-                let desc_result =
-                    retry_with_backoff(2, || async { c.describe(&b64, &tmpl).await }).await;
+                let desc_result = retry_with_backoff(2, || async {
+                    clients.describe(&preprocessed.base64, &desc_template).await
+                })
+                .await;
                 match desc_result {
                     Ok(ref desc) => {
                         debug!("{filename}: description received ({} chars)", desc.len());
@@ -210,11 +207,10 @@ pub async fn run_pipeline(
 
             // Scoring
             if needs_scoring {
-                let b64 = preprocessed.base64.clone();
-                let prompt = prompts_rendered.clone();
-                let c = clients.clone();
-                let score_result =
-                    retry_with_backoff(3, || async { c.score(&b64, &prompt).await }).await;
+                let score_result = retry_with_backoff(3, || async {
+                    clients.score(&preprocessed.base64, &prompts_rendered).await
+                })
+                .await;
                 match score_result {
                     Ok(mut scores) => {
                         scores.clamp();
@@ -266,9 +262,8 @@ pub async fn run_pipeline(
                 }
 
                 if let Err(e) = sidecar.write(&sidecar_path) {
-                    error!("Failed to write sidecar for {filename}: {e}");
-                    eprintln!(
-                        "XMP write failed for {filename} — description and scores lost. Re-run with --force to retry."
+                    error!(
+                        "Failed to write sidecar for {filename}: {e} — description and scores lost, re-run with --force to retry"
                     );
                 }
             }

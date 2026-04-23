@@ -61,19 +61,16 @@ impl ScoringResult {
 
     /// Clamp every present score to the 0.0--1.0 range.
     pub fn clamp(&mut self) {
-        if let Some(v) = &mut self.sharpness {
-            *v = v.clamp(0.0, 1.0);
-        }
-        if let Some(v) = &mut self.exposure {
-            *v = v.clamp(0.0, 1.0);
-        }
-        if let Some(v) = &mut self.composition {
-            *v = v.clamp(0.0, 1.0);
-        }
-        if let Some(v) = &mut self.subject_clarity {
-            *v = v.clamp(0.0, 1.0);
-        }
-        if let Some(v) = &mut self.aesthetics {
+        for v in [
+            &mut self.sharpness,
+            &mut self.exposure,
+            &mut self.composition,
+            &mut self.subject_clarity,
+            &mut self.aesthetics,
+        ]
+        .into_iter()
+        .flatten()
+        {
             *v = v.clamp(0.0, 1.0);
         }
     }

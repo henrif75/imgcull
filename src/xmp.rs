@@ -14,18 +14,14 @@ use quick_xml::events::Event;
 
 use crate::scoring::ScoringResult;
 
-/// Utility for computing the XMP sidecar path that corresponds to an image.
-pub struct SidecarPath;
-
-impl SidecarPath {
-    /// Replace the image file extension with `.xmp`.
-    ///
-    /// # Examples
-    /// - `IMG_1234.jpg` becomes `IMG_1234.xmp`
-    /// - `IMG_5678.CR2` becomes `IMG_5678.xmp`
-    pub fn for_image(path: &Path) -> PathBuf {
-        path.with_extension("xmp")
-    }
+/// Compute the XMP sidecar path that corresponds to an image by replacing
+/// the extension with `.xmp`.
+///
+/// # Examples
+/// - `IMG_1234.jpg` becomes `IMG_1234.xmp`
+/// - `IMG_5678.CR2` becomes `IMG_5678.xmp`
+pub fn sidecar_for_image(path: &Path) -> PathBuf {
+    path.with_extension("xmp")
 }
 
 /// In-memory representation of an XMP sidecar file.
@@ -242,7 +238,14 @@ impl XmpSidecar {
     }
 
     /// Set the original filename of the source image.
+    ///
+    /// The pipeline calls this once per image on every run, including when no
+    /// LLM work is needed, so we only mark the sidecar dirty when the value
+    /// actually changed — otherwise re-runs would rewrite every file.
     pub fn set_original_filename(&mut self, filename: &str) {
+        if self.original_filename.as_deref() == Some(filename) {
+            return;
+        }
         self.original_filename = Some(filename.to_string());
         self.dirty = true;
     }
