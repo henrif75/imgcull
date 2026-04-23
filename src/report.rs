@@ -6,10 +6,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
-
 use crate::discovery::discover_images;
-use crate::xmp::{SidecarPath, XmpSidecar};
+use crate::xmp::{XmpSidecar, sidecar_for_image};
 
 /// Output format for the report.
 pub enum OutputFormat {
@@ -128,7 +126,7 @@ fn discover_xmp_files(paths: &[PathBuf]) -> Vec<PathBuf> {
     // Also find sidecars via image discovery (for images that have matching .xmp).
     let images = discover_images(paths);
     for image_path in &images {
-        let sidecar_path = SidecarPath::for_image(image_path);
+        let sidecar_path = sidecar_for_image(image_path);
         if sidecar_path.exists() {
             xmp_files.insert(sidecar_path);
         }
@@ -309,23 +307,19 @@ fn render_csv(rows: &[ReportRow]) {
 ///
 /// Discovers XMP sidecars in the given paths (both standalone `.xmp` files and
 /// sidecars matching discovered images) and outputs a summary in the requested
-/// format to stdout.
-pub fn run_report(
-    paths: &[PathBuf],
-    format: OutputFormat,
-    sort: SortOrder,
-    ascending: bool,
-) -> Result<()> {
+/// format to stdout.  Individual read or parse failures are logged to stderr
+/// and skipped, so this function does not fail.
+pub fn run_report(paths: &[PathBuf], format: OutputFormat, sort: SortOrder, ascending: bool) {
     let xmp_files = discover_xmp_files(paths);
     if xmp_files.is_empty() {
         eprintln!("No XMP sidecars found.");
-        return Ok(());
+        return;
     }
 
     let mut rows: Vec<ReportRow> = xmp_files.iter().filter_map(|p| row_from_xmp(p)).collect();
     if rows.is_empty() {
         eprintln!("No readable XMP sidecars found.");
-        return Ok(());
+        return;
     }
 
     sort_rows(&mut rows, &sort, ascending);
@@ -334,8 +328,6 @@ pub fn run_report(
         OutputFormat::Table => render_table(&rows),
         OutputFormat::Csv => render_csv(&rows),
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

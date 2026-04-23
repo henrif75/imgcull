@@ -30,13 +30,20 @@ async fn main() -> Result<()> {
                 cli::SortBy::Filename => imgcull::report::SortOrder::Filename,
                 cli::SortBy::Rating => imgcull::report::SortOrder::Rating,
             };
-            imgcull::report::run_report(&args.paths, format, sort, args.asc)
+            imgcull::report::run_report(&args.paths, format, sort, args.asc);
+            Ok(())
         }
         Commands::Init => run_init(),
     }
 }
 
 async fn run_process(args: cli::ProcessArgs, describe_only: bool) -> Result<()> {
+    // The describe subcommand + --no-description is a no-op.  Reject it up
+    // front rather than silently doing nothing.
+    if describe_only && args.no_description {
+        anyhow::bail!("--no-description cannot be used with the `describe` subcommand");
+    }
+
     // Setup logging first so we can see any issues during config loading and client initialization.
     // Logs will go to stderr by default, but can be configured to go to a file with --log.
     imgcull::setup_logging(args.verbose, args.quiet, args.log.as_deref())?;
@@ -98,7 +105,6 @@ async fn run_process(args: cli::ProcessArgs, describe_only: bool) -> Result<()> 
         backup: config.default_settings.backup,
         force: args.force,
         dry_run: args.dry_run,
-        score_only: false,
         describe_only,
     };
 
