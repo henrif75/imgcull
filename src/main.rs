@@ -67,9 +67,6 @@ async fn run_process(args: cli::ProcessArgs, describe_only: bool) -> Result<()> 
     if let Some(ref p) = args.scoring_provider {
         config.default_settings.scoring_provider = p.clone();
     }
-    if let Some(ref dims) = args.dimensions {
-        config.scoring.dimensions = dims.clone();
-    }
     if args.backup {
         config.default_settings.backup = true;
     }

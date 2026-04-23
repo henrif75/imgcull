@@ -1,17 +1,21 @@
-use imgcull::scoring::{ScoringResult, score_to_stars};
+use imgcull::scoring::{DIMENSIONS, ScoringResult, score_to_stars};
 
-fn all_dimensions() -> Vec<String> {
-    vec![
-        "sharpness".into(),
-        "exposure".into(),
-        "composition".into(),
-        "subject_clarity".into(),
-        "aesthetics".into(),
-    ]
+#[test]
+fn dimensions_constant_has_five_items_in_canonical_order() {
+    assert_eq!(
+        DIMENSIONS,
+        &[
+            "sharpness",
+            "exposure",
+            "composition",
+            "subject_clarity",
+            "aesthetics",
+        ]
+    );
 }
 
 #[test]
-fn overall_score_all_dimensions() {
+fn overall_score_averages_all_populated_dimensions() {
     let result = ScoringResult {
         sharpness: Some(0.8),
         exposure: Some(0.6),
@@ -20,28 +24,26 @@ fn overall_score_all_dimensions() {
         aesthetics: Some(0.5),
         ..Default::default()
     };
-    let score = result.overall_score(&all_dimensions());
     let expected = (0.8 + 0.6 + 0.7 + 0.9 + 0.5) / 5.0;
-    assert!((score - expected).abs() < f64::EPSILON);
+    assert!((result.overall_score() - expected).abs() < f64::EPSILON);
 }
 
 #[test]
-fn overall_score_subset_of_dimensions() {
+fn overall_score_ignores_missing_dimensions() {
+    // Only sharpness and exposure populated → average of just those two.
     let result = ScoringResult {
         sharpness: Some(0.8),
         exposure: Some(0.6),
         ..Default::default()
     };
-    let dims: Vec<String> = vec!["sharpness".into(), "exposure".into()];
-    let score = result.overall_score(&dims);
     let expected = (0.8 + 0.6) / 2.0;
-    assert!((score - expected).abs() < f64::EPSILON);
+    assert!((result.overall_score() - expected).abs() < f64::EPSILON);
 }
 
 #[test]
-fn overall_score_no_matching_dimensions() {
+fn overall_score_empty_result_is_zero() {
     let result = ScoringResult::default();
-    assert_eq!(result.overall_score(&all_dimensions()), 0.0);
+    assert_eq!(result.overall_score(), 0.0);
 }
 
 #[test]

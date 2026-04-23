@@ -3,6 +3,18 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// The fixed set of dimensions scored for every image, in canonical order.
+///
+/// This is the single source of truth shared by prompt rendering, overall
+/// score averaging, and XMP sidecar write.
+pub const DIMENSIONS: &[&str] = &[
+    "sharpness",
+    "exposure",
+    "composition",
+    "subject_clarity",
+    "aesthetics",
+];
+
 /// Result of LLM quality scoring across multiple dimensions.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ScoringResult {
@@ -46,13 +58,12 @@ impl ScoringResult {
         }
     }
 
-    /// Compute the equal-weighted average of the requested dimensions.
+    /// Compute the equal-weighted average of the [`DIMENSIONS`] that are
+    /// present (`Some`) on this result.
     ///
-    /// Only dimensions that are both listed in `dimensions` *and* present
-    /// (`Some`) contribute.  Returns `0.0` when no matching dimensions are
-    /// available.
-    pub fn overall_score(&self, dimensions: &[String]) -> f64 {
-        let (sum, count) = dimensions
+    /// Returns `0.0` when no dimensions are populated.
+    pub fn overall_score(&self) -> f64 {
+        let (sum, count) = DIMENSIONS
             .iter()
             .filter_map(|d| self.get(d))
             .fold((0.0f64, 0usize), |(s, n), v| (s + v, n + 1));

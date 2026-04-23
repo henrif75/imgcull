@@ -208,25 +208,21 @@ impl XmpSidecar {
 
     /// Store scoring results from an LLM evaluation.
     ///
-    /// Records per-dimension scores, the overall score, a timestamp, and the
-    /// model identifier. The `scored_at` field is set to the current UTC time.
-    pub fn set_scores(
-        &mut self,
-        scores: &ScoringResult,
-        dims: &[String],
-        overall: f64,
-        scored_by: &str,
-    ) {
+    /// Records per-dimension scores for every populated dimension in
+    /// [`crate::scoring::DIMENSIONS`], the overall score, a timestamp, and
+    /// the model identifier.  The `scored_at` field is set to the current
+    /// UTC time.
+    pub fn set_scores(&mut self, scores: &ScoringResult, overall: f64, scored_by: &str) {
         self.overall_score = Some(overall);
         self.scored_by = Some(scored_by.to_string());
         self.scored_at = Some(Utc::now().to_rfc3339());
-        self.dimensions_list = Some(dims.join(","));
+        self.dimensions_list = Some(crate::scoring::DIMENSIONS.join(","));
         self.dirty = true;
 
         self.dimension_scores.clear();
-        for dim in dims {
+        for dim in crate::scoring::DIMENSIONS {
             if let Some(val) = scores.get(dim) {
-                self.dimension_scores.push((dim.clone(), val));
+                self.dimension_scores.push((dim.to_string(), val));
             }
         }
     }

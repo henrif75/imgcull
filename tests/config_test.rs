@@ -24,9 +24,6 @@ backup = true
 [providers.custom]
 model = "my-model"
 api_key_env = "MY_KEY"
-
-[scoring]
-dimensions = ["sharpness", "exposure"]
 "#;
     let config: Config = toml::from_str(toml_str).unwrap();
     assert_eq!(config.default_settings.concurrency, 8);
@@ -35,7 +32,23 @@ dimensions = ["sharpness", "exposure"]
     assert!(!config.default_settings.set_rating);
     assert!(config.default_settings.backup);
     assert!(config.providers.contains_key("custom"));
-    assert_eq!(config.scoring.dimensions.len(), 2);
+}
+
+/// Legacy 0.2.x configs included a `[scoring]` section. It is now ignored
+/// (dimensions are fixed) but must not cause a parse error for users upgrading.
+#[test]
+fn config_with_legacy_scoring_section_parses() {
+    let toml_str = r#"
+[default]
+concurrency = 4
+description_provider = "claude"
+scoring_provider = "claude"
+
+[scoring]
+dimensions = ["sharpness", "exposure"]
+"#;
+    let config: Config = toml::from_str(toml_str).expect("legacy [scoring] must be ignored");
+    assert_eq!(config.default_settings.concurrency, 4);
 }
 
 #[test]
@@ -55,32 +68,6 @@ fn default_prompts_have_entries() {
 }
 
 #[test]
-fn default_dimensions_has_five_items() {
-    let config = Config::default();
-    assert_eq!(config.scoring.dimensions.len(), 5);
-    assert!(config.scoring.dimensions.contains(&"sharpness".to_string()));
-    assert!(config.scoring.dimensions.contains(&"exposure".to_string()));
-    assert!(
-        config
-            .scoring
-            .dimensions
-            .contains(&"composition".to_string())
-    );
-    assert!(
-        config
-            .scoring
-            .dimensions
-            .contains(&"subject_clarity".to_string())
-    );
-    assert!(
-        config
-            .scoring
-            .dimensions
-            .contains(&"aesthetics".to_string())
-    );
-}
-
-#[test]
 fn provider_configs_have_correct_defaults() {
     let config = Config::default();
     let claude = config.providers.get("claude").unwrap();
@@ -97,11 +84,11 @@ fn provider_configs_have_correct_defaults() {
 #[test]
 fn render_scoring_prompt_replaces_placeholders() {
     let prompts = Prompts::default();
-    let dims = vec!["sharpness".to_string(), "exposure".to_string()];
     let mut guidelines = std::collections::HashMap::new();
     guidelines.insert("sharpness".to_string(), "1.0 = tack sharp".to_string());
-    let rendered = prompts.render_scoring_prompt(&dims, &guidelines);
-    assert!(rendered.contains("sharpness, exposure"));
+    let rendered = prompts.render_scoring_prompt(&guidelines);
+    // The canonical dimensions list from `scoring::DIMENSIONS` must appear.
+    assert!(rendered.contains("sharpness, exposure, composition, subject_clarity, aesthetics"));
     assert!(rendered.contains("- sharpness: 1.0 = tack sharp"));
     assert!(!rendered.contains("{{dimensions}}"));
     assert!(!rendered.contains("{{guidelines}}"));
