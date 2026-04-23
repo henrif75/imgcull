@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::discovery::discover_images;
+use crate::discovery::{discover_images, has_extension};
 use crate::xmp::{XmpSidecar, sidecar_for_image};
 
 /// Output format for the report.
@@ -137,9 +137,7 @@ fn discover_xmp_files(paths: &[PathBuf]) -> Vec<PathBuf> {
 
 /// Returns `true` if the file has an `.xmp` extension (case-insensitive).
 fn is_xmp(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("xmp"))
+    has_extension(path, &["xmp"])
 }
 
 /// Recursively scan a directory for `.xmp` files.

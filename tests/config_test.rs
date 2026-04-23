@@ -55,7 +55,14 @@ dimensions = ["sharpness", "exposure"]
 fn config_load_falls_back_to_defaults() {
     let config = Config::load(Path::new("/nonexistent/config.toml")).unwrap();
     assert_eq!(config.default_settings.concurrency, 4);
-    assert_eq!(config.providers.len(), 5);
+    // claude, openai, gemini, ollama — DeepSeek is not a default because it
+    // has no vision-capable model today.
+    assert_eq!(config.providers.len(), 4);
+    assert!(config.providers.contains_key("claude"));
+    assert!(config.providers.contains_key("openai"));
+    assert!(config.providers.contains_key("gemini"));
+    assert!(config.providers.contains_key("ollama"));
+    assert!(!config.providers.contains_key("deepseek"));
 }
 
 #[test]
@@ -71,9 +78,14 @@ fn default_prompts_have_entries() {
 fn provider_configs_have_correct_defaults() {
     let config = Config::default();
     let claude = config.providers.get("claude").unwrap();
-    assert_eq!(claude.model, "claude-sonnet-4-6-20250514");
+    // Stable alias — Anthropic auto-resolves this to the current Sonnet 4.6 snapshot.
+    assert_eq!(claude.model, "claude-sonnet-4-6");
     assert_eq!(claude.api_key_env.as_deref(), Some("ANTHROPIC_API_KEY"));
     assert!(claude.base_url.is_none());
+
+    let gemini = config.providers.get("gemini").unwrap();
+    // Stable 2.5 Pro — avoids the preview-only 3.x Pro models.
+    assert_eq!(gemini.model, "gemini-2.5-pro");
 
     let ollama = config.providers.get("ollama").unwrap();
     assert_eq!(ollama.model, "llava");

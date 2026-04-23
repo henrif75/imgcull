@@ -105,11 +105,16 @@ fn default_true() -> bool {
 }
 
 fn default_providers() -> HashMap<String, ProviderConfig> {
+    // Only vision-capable providers are shipped as defaults.  Rig's DeepSeek
+    // provider is still wired up in `llm::build_provider`, but DeepSeek's
+    // public API has no vision-capable model today — users who want it must
+    // add a `[providers.deepseek]` section to their config manually.
     let mut m = HashMap::new();
     m.insert(
         "claude".to_string(),
         ProviderConfig {
-            model: "claude-sonnet-4-6-20250514".to_string(),
+            // Stable alias — auto-tracks the current Sonnet 4.6 snapshot.
+            model: "claude-sonnet-4-6".to_string(),
             api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
             base_url: None,
         },
@@ -125,16 +130,10 @@ fn default_providers() -> HashMap<String, ProviderConfig> {
     m.insert(
         "gemini".to_string(),
         ProviderConfig {
-            model: "gemini-3.1-pro".to_string(),
+            // Stable alias for the current Gemini 2.5 Pro snapshot.  Gemini
+            // 3.x Pro is preview-only as of this writing.
+            model: "gemini-2.5-pro".to_string(),
             api_key_env: Some("GEMINI_API_KEY".to_string()),
-            base_url: None,
-        },
-    );
-    m.insert(
-        "deepseek".to_string(),
-        ProviderConfig {
-            model: "deepseek-v3".to_string(),
-            api_key_env: Some("DEEPSEEK_API_KEY".to_string()),
             base_url: None,
         },
     );

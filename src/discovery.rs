@@ -15,15 +15,18 @@ pub const SUPPORTED_EXTENSIONS: &[&str] = &[
     "rw2", "sr2", "srw", // RAW formats handled via rawler
 ];
 
-/// Returns `true` if the file at `path` has a supported image extension (case-insensitive).
-pub fn is_supported(path: &Path) -> bool {
+/// Returns `true` when `path`'s extension matches any of `extensions`
+/// case-insensitively.  Returns `false` when the path has no extension or
+/// the extension is not valid UTF-8.
+pub fn has_extension(path: &Path, extensions: &[&str]) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| {
-            SUPPORTED_EXTENSIONS
-                .iter()
-                .any(|&s| s.eq_ignore_ascii_case(ext))
-        })
+        .is_some_and(|ext| extensions.iter().any(|&s| s.eq_ignore_ascii_case(ext)))
+}
+
+/// Returns `true` if the file at `path` has a supported image extension (case-insensitive).
+pub fn is_supported(path: &Path) -> bool {
+    has_extension(path, SUPPORTED_EXTENSIONS)
 }
 
 /// Discover image files from the given paths.
