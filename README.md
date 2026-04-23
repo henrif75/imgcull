@@ -4,7 +4,7 @@
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/henrif75/imgcull#license)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/henrif75/imgcull/ci.yml?branch=main)](https://github.com/henrif75/imgcull/actions)
-[![Version](https://img.shields.io/badge/version-0.2.1-orange.svg)](https://github.com/henrif75/imgcull/releases)
+[![Version](https://img.shields.io/badge/version-0.2.5-orange.svg)](https://github.com/henrif75/imgcull/releases)
 
 ![imgcull — AI-powered image culling](docs/banner.svg)
 
@@ -16,10 +16,10 @@ After a shoot, photographers face hundreds (or thousands) of raw files to review
 
 ## ✨ Features
 
-- **Multi-provider support** — works with Claude (Anthropic), GPT-4o (OpenAI), Gemini, DeepSeek, and local models via Ollama
+- **Multi-provider support** — Claude (Anthropic), OpenAI GPT-5, Gemini, and local models via Ollama
 - **XMP-native output** — scores and descriptions are written to `.xmp` sidecar files; existing Lightroom metadata (collections, color labels, crops) is preserved
 - **Non-destructive** — never modifies original image files; optional `.xmp.bak` backup before any update
-- **Configurable dimensions** — score on any subset of: sharpness, exposure, composition, subject clarity, aesthetics
+- **Five scoring dimensions** — sharpness, exposure, composition, subject clarity, aesthetics, averaged into an overall 0.00–1.00 score mapped to a 1–5 star rating
 - **Parallel processing** — bounded concurrency with configurable worker count for fast batch runs
 - **Dry-run mode** — preview which files would be processed without making any LLM calls or file writes
 - **LLM-generated keywords** — photography keywords written to `dc:subject` in XMP sidecars, appearing automatically as Lightroom keywords
@@ -129,7 +129,6 @@ imgcull report --format csv ~/Photos/2026-03-shoot/ > results.csv
 | `--provider NAME` | Override both description and scoring provider |
 | `--description-provider NAME` | Override description provider only |
 | `--scoring-provider NAME` | Override scoring provider only |
-| `--dimensions a,b,c` | Score on a custom subset of dimensions |
 | `--concurrency N` | Max parallel LLM requests (default: 4) |
 | `--backup` | Back up existing `.xmp` to `.xmp.bak` before modifying |
 | `--force` | Re-process images that already have scores/descriptions |
@@ -150,22 +149,41 @@ scoring_provider     = "claude"
 concurrency          = 8
 
 [providers.claude]
-model       = "claude-opus-4-5"
+model       = "claude-sonnet-4-6"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [providers.ollama]
 model    = "llava"
 base_url = "http://localhost:11434"
-
-[scoring]
-dimensions = ["sharpness", "exposure", "composition", "subject_clarity", "aesthetics"]
 ```
 
-Custom prompts can be edited in `prompts.toml` in the same config directory.
+Scoring dimensions are fixed (sharpness, exposure, composition, subject clarity, aesthetics). Custom per-dimension guidelines can still be edited in `prompts.toml` in the same config directory.
+
+A fully-annotated example is in [`docs/examples/config.toml`](docs/examples/config.toml).
 
 ---
 
 ## 📋 Release Notes
+
+For the full changelog, see [GitHub Releases](https://github.com/henrif75/imgcull/releases).
+
+### v0.2.5
+
+- Verified default model IDs against each provider's current documentation and corrected `claude-sonnet-4-6`, `gemini-2.5-pro`. Dropped DeepSeek from the default providers because its public API has no vision-capable model; the Rig backend is still wired up for users who add `[providers.deepseek]` manually.
+- Hardened the JSON extractor against `{` / `}` characters inside string values (e.g. a critique containing braces).
+
+### v0.2.4
+
+- Locked scoring dimensions to the fixed five. Removed the `--dimensions` CLI flag and the `[scoring]` config section, which previously only accepted subsets of the hardcoded dimensions and silently dropped anything else.
+
+### v0.2.3
+
+- Pre-build the Rig `Agent` per provider so the underlying HTTP client and connection pool are reused across every LLM call, instead of being rebuilt per image.
+
+### v0.2.2
+
+- Fix XMP sidecars being rewritten on every run even when nothing had changed.
+- Several internal cleanups: dead-code removal, fewer allocations on the hot path, simpler helpers.
 
 ### v0.2.1
 

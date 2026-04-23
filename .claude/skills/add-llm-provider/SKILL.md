@@ -36,32 +36,34 @@ If the provider isn't in Rig, stop and tell the user — they'll need to upgrade
 
 ### For API-key providers
 
-In [src/llm.rs](src/llm.rs), find the block of `api_key_provider!` invocations (around line 325) and add one line:
+In [src/llm.rs](src/llm.rs), find the block of `api_key_provider!` invocations and add one line:
 
 ```rust
 api_key_provider!(NewProvider, rig::providers::newprovider::Client, "NewProvider");
 ```
 
-Then add a match arm in `build_provider()` (around line 390):
+The macro generates a struct that stores a pre-built `Agent<CompletionModel>` bound to the provider's preamble, along with a `new(api_key, model, preamble) -> Result<Self>` constructor. That constructor is what `build_provider()` calls — the client and its connection pool are built once and reused for every LLM call, instead of being rebuilt per image.
+
+Add the match arm in `build_provider()`:
 
 ```rust
-"newprovider" => Ok(Box::new(NewProvider {
-    api_key: resolve_api_key(config)?,
-    model: config.model.clone(),
-    preamble: preamble.to_string(),
-})),
+"newprovider" => Ok(Box::new(NewProvider::new(
+    &resolve_api_key(config)?,
+    &config.model,
+    preamble,
+)?)),
 ```
 
 ### For custom builder providers
 
-Write a manual struct with impls for both `DescriptionProvider` and `ScoringProvider`. Use `OllamaProvider` as the reference. Add its match arm in `build_provider()`.
+Write a manual struct with impls for both `DescriptionProvider` and `ScoringProvider`. Use `OllamaProvider` as the reference — it also stores a pre-built `Agent` and exposes a `new(base_url, model, preamble) -> Result<Self>` constructor. Add its match arm in `build_provider()`.
 
 ## Step 4 — Register default config
 
-In [src/config.rs](src/config.rs), find the `Config::default()` implementation where `providers` is populated (around line 128). Add an entry:
+In [src/config.rs](src/config.rs), find the `default_providers()` function where the built-in providers are registered. Add an entry only if the new backend is a vision-capable provider that every user should get by default:
 
 ```rust
-providers.insert(
+m.insert(
     "newprovider".to_string(),
     ProviderConfig {
         model: "model-id-here".to_string(),
@@ -72,6 +74,8 @@ providers.insert(
 ```
 
 For non-API-key providers, set `api_key_env: None` and provide a `base_url`.
+
+If the backend lacks vision support (see Step 5 below) **do not** add it to `default_providers()` — leave the `build_provider()` match arm in place so users who want it can opt in via a manual `[providers.newprovider]` section in their config, but don't ship it as a default. DeepSeek is the existing example of this pattern.
 
 ## Step 5 — Sanity checks
 
