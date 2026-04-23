@@ -365,7 +365,6 @@ mod tests {
     fn test_row_from_xmp() {
         let tmp = TempDir::new().unwrap();
         let xmp_path = tmp.path().join("photo.xmp");
-        let dims = vec!["sharpness".to_string(), "exposure".to_string()];
         let scores = ScoringResult {
             sharpness: Some(0.90),
             exposure: Some(0.75),
@@ -373,7 +372,7 @@ mod tests {
         };
         let mut sidecar = XmpSidecar::new();
         sidecar.set_description("A test photo");
-        sidecar.set_scores(&scores, &dims, 0.825, "test/model");
+        sidecar.set_scores(&scores, 0.825, "test/model");
         sidecar.set_rating(4);
         sidecar.set_original_filename("photo.jpg");
         sidecar.set_keywords(&["portrait".to_string(), "outdoors".to_string()]);

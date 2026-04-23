@@ -42,12 +42,6 @@ fn write_and_read_back() {
     let tmp = TempDir::new().unwrap();
     let xmp_path = tmp.path().join("test.xmp");
 
-    let dims = vec![
-        "sharpness".to_string(),
-        "exposure".to_string(),
-        "composition".to_string(),
-    ];
-
     let scores = ScoringResult {
         sharpness: Some(0.90),
         exposure: Some(0.75),
@@ -55,11 +49,11 @@ fn write_and_read_back() {
         ..Default::default()
     };
 
-    let overall = scores.overall_score(&dims);
+    let overall = scores.overall_score();
 
     let mut sidecar = XmpSidecar::new();
     sidecar.set_description("A beautiful mountain landscape");
-    sidecar.set_scores(&scores, &dims, overall, "claude/test-model");
+    sidecar.set_scores(&scores, overall, "claude/test-model");
     sidecar.set_rating(4);
     sidecar.write(&xmp_path).expect("should write");
 
@@ -78,9 +72,10 @@ fn write_and_read_back() {
     assert!(raw.contains("<imgcull:score>"));
     assert!(raw.contains("<imgcull:sharpness>0.90</imgcull:sharpness>"));
     assert!(raw.contains("<imgcull:scored_by>claude/test-model</imgcull:scored_by>"));
-    assert!(
-        raw.contains("<imgcull:dimensions>sharpness,exposure,composition</imgcull:dimensions>")
-    );
+    // The canonical dimensions list is always written.
+    assert!(raw.contains(
+        "<imgcull:dimensions>sharpness,exposure,composition,subject_clarity,aesthetics</imgcull:dimensions>"
+    ));
 }
 
 #[test]
@@ -98,7 +93,6 @@ fn backup_creates_bak_file() {
 
 #[test]
 fn has_scores_after_set_scores() {
-    let dims = vec!["sharpness".to_string()];
     let scores = ScoringResult {
         sharpness: Some(0.85),
         ..Default::default()
@@ -107,7 +101,7 @@ fn has_scores_after_set_scores() {
     let mut sidecar = XmpSidecar::new();
     assert!(!sidecar.has_scores());
 
-    sidecar.set_scores(&scores, &dims, 0.85, "test");
+    sidecar.set_scores(&scores, 0.85, "test");
     assert!(sidecar.has_scores());
 }
 

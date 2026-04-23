@@ -88,10 +88,6 @@ pub struct ProcessArgs {
     #[arg(long)]
     pub concurrency: Option<usize>,
 
-    /// Comma-separated dimensions to score.
-    #[arg(long, value_delimiter = ',')]
-    pub dimensions: Option<Vec<String>>,
-
     /// Skip description generation.
     #[arg(long)]
     pub no_description: bool,

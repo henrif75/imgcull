@@ -6,6 +6,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// Top-level configuration for imgcull.
+///
+/// Extra top-level TOML sections (including the legacy `[scoring]` block used
+/// by 0.2.x before dimensions were locked to [`crate::scoring::DIMENSIONS`])
+/// are silently ignored for forward-compatibility.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     /// Default settings for processing.
@@ -15,10 +19,6 @@ pub struct Config {
     /// Configured LLM providers.
     #[serde(default = "default_providers")]
     pub providers: HashMap<String, ProviderConfig>,
-
-    /// Scoring configuration.
-    #[serde(default)]
-    pub scoring: ScoringConfig,
 }
 
 /// Default processing settings.
@@ -58,14 +58,6 @@ pub struct ProviderConfig {
     /// Base URL for the provider API.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
-}
-
-/// Scoring configuration.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ScoringConfig {
-    /// Dimensions to score images on.
-    #[serde(default = "default_dimensions")]
-    pub dimensions: Vec<String>,
 }
 
 /// Prompts configuration for description and scoring.
@@ -110,16 +102,6 @@ fn default_scoring_provider() -> String {
 
 fn default_true() -> bool {
     true
-}
-
-fn default_dimensions() -> Vec<String> {
-    vec![
-        "sharpness".to_string(),
-        "exposure".to_string(),
-        "composition".to_string(),
-        "subject_clarity".to_string(),
-        "aesthetics".to_string(),
-    ]
 }
 
 fn default_providers() -> HashMap<String, ProviderConfig> {
@@ -251,20 +233,11 @@ impl Default for DefaultSettings {
     }
 }
 
-impl Default for ScoringConfig {
-    fn default() -> Self {
-        Self {
-            dimensions: default_dimensions(),
-        }
-    }
-}
-
 impl Default for Config {
     fn default() -> Self {
         Self {
             default_settings: DefaultSettings::default(),
             providers: default_providers(),
-            scoring: ScoringConfig::default(),
         }
     }
 }
@@ -304,14 +277,11 @@ impl Prompts {
         }
     }
 
-    /// Render the scoring prompt template, replacing `{{dimensions}}` and `{{guidelines}}`
-    /// placeholders with the provided values.
-    pub fn render_scoring_prompt(
-        &self,
-        dimensions: &[String],
-        guidelines: &HashMap<String, String>,
-    ) -> String {
-        let dims_text = dimensions.join(", ");
+    /// Render the scoring prompt template, replacing `{{dimensions}}` with
+    /// the canonical [`crate::scoring::DIMENSIONS`] list and `{{guidelines}}`
+    /// with the configured per-dimension guidelines.
+    pub fn render_scoring_prompt(&self, guidelines: &HashMap<String, String>) -> String {
+        let dims_text = crate::scoring::DIMENSIONS.join(", ");
         let guide_text: String = guidelines
             .iter()
             .map(|(k, v)| format!("- {k}: {v}"))

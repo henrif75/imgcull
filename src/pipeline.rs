@@ -64,7 +64,6 @@ pub async fn run_pipeline(
 ) -> Result<()> {
     let summary = Arc::new(RunSummary::new());
     let semaphore = Arc::new(Semaphore::new(config.default_settings.concurrency));
-    let dimensions = config.scoring.dimensions.clone();
 
     let pb = ProgressBar::new(images.len() as u64);
     pb.set_style(
@@ -79,9 +78,7 @@ pub async fn run_pipeline(
 
     // Compute run-level constants once before the loop.  Arc-wrapped so that
     // each spawn only bumps a refcount instead of cloning the full String.
-    let prompts_rendered: Arc<str> = prompts
-        .render_scoring_prompt(&dimensions, &prompts.guidelines)
-        .into();
+    let prompts_rendered: Arc<str> = prompts.render_scoring_prompt(&prompts.guidelines).into();
     let desc_template: Arc<str> = prompts.description.template.clone().into();
     let score_provider_name: Arc<str> = config.default_settings.scoring_provider.clone().into();
     let score_model_name: Arc<str> = config
@@ -90,7 +87,6 @@ pub async fn run_pipeline(
         .map(|p| p.model.clone())
         .unwrap_or_default()
         .into();
-    let dimensions: Arc<[String]> = dimensions.into();
 
     let mut handles = Vec::new();
 
@@ -98,7 +94,6 @@ pub async fn run_pipeline(
         let sem = semaphore.clone();
         let clients = clients.clone();
         let summary = summary.clone();
-        let dims = dimensions.clone();
         let prompts_rendered = prompts_rendered.clone();
         let desc_template = desc_template.clone();
         let score_provider_name = score_provider_name.clone();
@@ -214,7 +209,7 @@ pub async fn run_pipeline(
                 match score_result {
                     Ok(mut scores) => {
                         scores.clamp();
-                        let overall = scores.overall_score(&dims);
+                        let overall = scores.overall_score();
                         debug!("{filename}: scored {overall:.2} — {scores:?}");
                         let provider_info = format!("{}/{}", score_provider_name, score_model_name);
                         if let Some(ref critique) = scores.critique {
@@ -226,7 +221,7 @@ pub async fn run_pipeline(
                         {
                             sidecar.set_keywords(keywords);
                         }
-                        sidecar.set_scores(&scores, &dims, overall, &provider_info);
+                        sidecar.set_scores(&scores, overall, &provider_info);
 
                         let stars = score_to_stars(overall);
                         if !options_no_rating {
