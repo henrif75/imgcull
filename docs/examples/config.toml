@@ -32,22 +32,22 @@ backup = false
 # ── Provider configurations ────────────────────────────────────────────────────
 # Only configure the providers you actually use.
 # API keys are read from environment variables — never stored in this file.
+#
+# These model IDs are the built-in defaults as of imgcull 0.2.5 — you only
+# need to override them here to pin a different snapshot or pick a different
+# tier (e.g. switch Claude from Sonnet to Opus).
 
 [providers.claude]
-model       = "claude-opus-4-5"          # or claude-sonnet-4-6
+model       = "claude-sonnet-4-6"        # or claude-opus-4-7 / claude-haiku-4-5
 api_key_env = "ANTHROPIC_API_KEY"
 
 [providers.openai]
-model       = "gpt-4o"
+model       = "gpt-5.4"                  # or gpt-5.4-mini / gpt-5.4-nano
 api_key_env = "OPENAI_API_KEY"
 
 [providers.gemini]
-model       = "gemini-1.5-pro"           # or gemini-2.0-flash
+model       = "gemini-2.5-pro"           # or gemini-2.5-flash
 api_key_env = "GEMINI_API_KEY"
-
-[providers.deepseek]
-model       = "deepseek-chat"            # DeepSeek-V3 API name
-api_key_env = "DEEPSEEK_API_KEY"
 
 [providers.ollama]
 model    = "llava"                       # any vision-capable model pulled via `ollama pull`
@@ -55,15 +55,9 @@ base_url = "http://localhost:11434"      # no api_key_env needed for local Ollam
 
 
 # ── Scoring dimensions ─────────────────────────────────────────────────────────
-# The dimensions listed here are passed to the LLM for scoring.
-# Each dimension must have a matching entry under [guidelines] in prompts.toml.
-# You can use any subset of the defaults, or add custom dimension names.
-
-[scoring]
-dimensions = [
-  "sharpness",
-  "exposure",
-  "composition",
-  "subject_clarity",
-  "aesthetics",
-]
+# Scoring dimensions are fixed as of imgcull 0.2.4 — the tool always scores
+# on sharpness, exposure, composition, subject_clarity, and aesthetics.
+# There is no `[scoring]` config section; adding one is silently ignored.
+#
+# Per-dimension *guideline text* can still be customized in prompts.toml
+# under the [guidelines] table to tune how the LLM interprets each score.
