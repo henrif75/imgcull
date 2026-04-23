@@ -143,8 +143,7 @@ fn run_init() -> Result<()> {
              # Copy this file to .env in this directory and fill in the keys you need.\n\n\
              # ANTHROPIC_API_KEY=sk-ant-...\n\
              # OPENAI_API_KEY=sk-...\n\
-             # GEMINI_API_KEY=...\n\
-             # DEEPSEEK_API_KEY=...\n",
+             # GEMINI_API_KEY=...\n",
         )?;
         eprintln!("Created {}", env_example_path.display());
     }

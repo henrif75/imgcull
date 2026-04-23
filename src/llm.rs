@@ -139,14 +139,31 @@ fn build_image_message(image_base64: &str, prompt: &str) -> Message {
 /// Extract a JSON object from `text` using brace-depth counting.
 ///
 /// Finds the first `{` and then counts opening/closing braces to locate
-/// the matching `}`, returning the full object slice.  This correctly
-/// handles nested objects and prose that contains stray braces *after*
-/// the JSON value.
+/// the matching `}`, returning the full object slice.  Correctly handles:
+/// - nested objects,
+/// - prose that contains stray braces after the JSON value,
+/// - `{` / `}` appearing inside JSON string values (tracked with an
+///   in-string state machine that honours backslash escapes).
 fn extract_json_object(text: &str) -> Option<&str> {
     let start = text.find('{')?;
-    let mut depth = 0;
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut escape = false;
     for (i, ch) in text[start..].char_indices() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if in_string {
+            match ch {
+                '\\' => escape = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
         match ch {
+            '"' => in_string = true,
             '{' => depth += 1,
             '}' => {
                 depth -= 1;
@@ -247,6 +264,29 @@ mod tests {
         // to fail — without it serde ignores extra fields, so this should parse fine.
         let result = parse_scoring_result(text).unwrap();
         assert!((result.sharpness.unwrap() - 0.8).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_parse_json_with_braces_in_string_value() {
+        // `critique` contains literal `{` and `}` characters.  The naive depth
+        // counter (pre-hardening) would have treated the `{` as opening a
+        // nested object and truncated the slice at the first unmatched `}`.
+        let text = r#"{"sharpness": 0.8, "exposure": 0.7, "composition": 0.6, "subject_clarity": 0.9, "aesthetics": 0.5, "critique": "braces { and } inside prose"}"#;
+        let result = parse_scoring_result(text).unwrap();
+        assert!((result.sharpness.unwrap() - 0.8).abs() < 1e-9);
+        assert_eq!(
+            result.critique.as_deref(),
+            Some("braces { and } inside prose")
+        );
+    }
+
+    #[test]
+    fn test_parse_json_with_escaped_quote_in_string() {
+        // Backslash-escaped quotes inside a string must not flip the
+        // in-string state prematurely.
+        let text = r#"{"sharpness": 0.8, "exposure": 0.7, "composition": 0.6, "subject_clarity": 0.9, "aesthetics": 0.5, "critique": "say \"hi\" and then }"}"#;
+        let result = parse_scoring_result(text).unwrap();
+        assert_eq!(result.critique.as_deref(), Some("say \"hi\" and then }"));
     }
 }
 
