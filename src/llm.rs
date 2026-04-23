@@ -7,6 +7,7 @@
 
 use anyhow::{Context, Result};
 use rig::OneOrMany;
+use rig::agent::Agent;
 use rig::client::{CompletionClient, Nothing};
 use rig::completion::message::{ImageMediaType, UserContent};
 use rig::completion::{Message, Prompt};
@@ -257,7 +258,7 @@ mod tests {
 /// response string.  All provider impls delegate here to avoid repeating the
 /// `build_image_message` / `.prompt()` / `.context()` boilerplate.
 async fn run_agent_prompt(
-    agent: impl Prompt,
+    agent: &impl Prompt,
     image_base64: &str,
     user_prompt: &str,
     error_context: &'static str,
@@ -274,26 +275,30 @@ async fn run_agent_prompt(
 /// Generate a provider struct with both `DescriptionProvider` and `ScoringProvider`
 /// impls for an API-key-based Rig provider.
 ///
-/// All API-key providers follow the same pattern: `Client::new(&api_key)?` then
-/// `.agent(&model).preamble(&preamble).build()`.  Only the provider module path
-/// and the label used in error messages differ.
+/// The generated struct stores a pre-built [`Agent`] bound to its preamble, so
+/// the underlying `reqwest` client (and its connection pool) is constructed
+/// once per `LlmClients` rather than rebuilt on every LLM call.
 macro_rules! api_key_provider {
     ($struct_name:ident, $client_type:ty, $label:expr) => {
         struct $struct_name {
-            api_key: String,
-            model: String,
-            preamble: String,
+            agent: Agent<<$client_type as CompletionClient>::CompletionModel>,
+        }
+
+        impl $struct_name {
+            fn new(api_key: &str, model: &str, preamble: &str) -> Result<Self> {
+                let agent = <$client_type>::new(api_key)?
+                    .agent(model)
+                    .preamble(preamble)
+                    .build();
+                Ok(Self { agent })
+            }
         }
 
         #[async_trait::async_trait]
         impl DescriptionProvider for $struct_name {
             async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-                let agent = <$client_type>::new(&self.api_key)?
-                    .agent(&self.model)
-                    .preamble(&self.preamble)
-                    .build();
                 run_agent_prompt(
-                    agent,
+                    &self.agent,
                     image_base64,
                     prompt,
                     concat!($label, " description request failed"),
@@ -305,12 +310,8 @@ macro_rules! api_key_provider {
         #[async_trait::async_trait]
         impl ScoringProvider for $struct_name {
             async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-                let agent = <$client_type>::new(&self.api_key)?
-                    .agent(&self.model)
-                    .preamble(&self.preamble)
-                    .build();
                 run_agent_prompt(
-                    agent,
+                    &self.agent,
                     image_base64,
                     prompt,
                     concat!($label, " scoring request failed"),
@@ -333,23 +334,27 @@ api_key_provider!(
 
 /// Ollama uses a builder pattern with `Nothing` instead of an API key.
 struct OllamaProvider {
-    base_url: String,
-    model: String,
-    preamble: String,
+    agent: Agent<<rig::providers::ollama::Client as CompletionClient>::CompletionModel>,
+}
+
+impl OllamaProvider {
+    fn new(base_url: &str, model: &str, preamble: &str) -> Result<Self> {
+        let agent = rig::providers::ollama::Client::builder()
+            .api_key(Nothing)
+            .base_url(base_url)
+            .build()?
+            .agent(model)
+            .preamble(preamble)
+            .build();
+        Ok(Self { agent })
+    }
 }
 
 #[async_trait::async_trait]
 impl DescriptionProvider for OllamaProvider {
     async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        let agent = rig::providers::ollama::Client::builder()
-            .api_key(Nothing)
-            .base_url(&self.base_url)
-            .build()?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
         run_agent_prompt(
-            agent,
+            &self.agent,
             image_base64,
             prompt,
             "Ollama description request failed",
@@ -361,16 +366,14 @@ impl DescriptionProvider for OllamaProvider {
 #[async_trait::async_trait]
 impl ScoringProvider for OllamaProvider {
     async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        let agent = rig::providers::ollama::Client::builder()
-            .api_key(Nothing)
-            .base_url(&self.base_url)
-            .build()?
-            .agent(&self.model)
-            .preamble(&self.preamble)
-            .build();
-        run_agent_prompt(agent, image_base64, prompt, "Ollama scoring request failed")
-            .await
-            .and_then(|r| parse_scoring_result(&r))
+        run_agent_prompt(
+            &self.agent,
+            image_base64,
+            prompt,
+            "Ollama scoring request failed",
+        )
+        .await
+        .and_then(|r| parse_scoring_result(&r))
     }
 }
 
@@ -388,34 +391,37 @@ fn build_provider(
     preamble: &str,
 ) -> Result<Box<dyn DualProvider>> {
     match name {
-        "claude" => Ok(Box::new(ClaudeProvider {
-            api_key: resolve_api_key(config)?,
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
-        "openai" => Ok(Box::new(OpenAiProvider {
-            api_key: resolve_api_key(config)?,
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
-        "gemini" => Ok(Box::new(GeminiProvider {
-            api_key: resolve_api_key(config)?,
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
-        "deepseek" => Ok(Box::new(DeepSeekProvider {
-            api_key: resolve_api_key(config)?,
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
-        "ollama" => Ok(Box::new(OllamaProvider {
-            base_url: config
+        "claude" => Ok(Box::new(ClaudeProvider::new(
+            &resolve_api_key(config)?,
+            &config.model,
+            preamble,
+        )?)),
+        "openai" => Ok(Box::new(OpenAiProvider::new(
+            &resolve_api_key(config)?,
+            &config.model,
+            preamble,
+        )?)),
+        "gemini" => Ok(Box::new(GeminiProvider::new(
+            &resolve_api_key(config)?,
+            &config.model,
+            preamble,
+        )?)),
+        "deepseek" => Ok(Box::new(DeepSeekProvider::new(
+            &resolve_api_key(config)?,
+            &config.model,
+            preamble,
+        )?)),
+        "ollama" => {
+            let base_url = config
                 .base_url
-                .clone()
-                .unwrap_or_else(|| "http://localhost:11434".to_string()),
-            model: config.model.clone(),
-            preamble: preamble.to_string(),
-        })),
+                .as_deref()
+                .unwrap_or("http://localhost:11434");
+            Ok(Box::new(OllamaProvider::new(
+                base_url,
+                &config.model,
+                preamble,
+            )?))
+        }
         other => anyhow::bail!("Unsupported provider: {other}"),
     }
 }
