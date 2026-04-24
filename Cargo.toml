@@ -1,6 +1,6 @@
 [package]
 name = "imgcull"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2024"
 description = "AI-powered image culling tool using vision LLMs"
 license = "MIT OR Apache-2.0"
