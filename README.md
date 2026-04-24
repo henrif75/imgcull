@@ -35,8 +35,24 @@ Built with **Rust** (edition 2024), **Tokio** (async runtime), **Rig** (LLM prov
 
 ### Prerequisites
 
-- Rust `>=` 1.85 (edition 2024)
 - An API key for at least one supported provider, **or** a running [Ollama](https://ollama.ai) instance for local inference
+- (Only if building from source) Rust `>=` 1.85 (edition 2024)
+
+### Install from the GitHub release (recommended)
+
+Pre-built binaries are published for macOS (Apple Silicon and Intel), Linux (x86_64 and aarch64), and Windows (x86_64) on every tagged release. Pick the one-liner for your platform:
+
+```bash
+# macOS / Linux
+curl -LsSf https://github.com/henrif75/imgcull/releases/latest/download/imgcull-installer.sh | sh
+
+# Windows PowerShell
+powershell -c "irm https://github.com/henrif75/imgcull/releases/latest/download/imgcull-installer.ps1 | iex"
+```
+
+The installer drops `imgcull` into a Cargo-style install location (`~/.cargo/bin` on Unix, `%USERPROFILE%\.cargo\bin` on Windows) and prints any PATH changes you need to make. SHA-256 checksums are published alongside each artifact.
+
+Prefer downloading the tarball yourself? Grab the right archive for your platform from the [latest release page](https://github.com/henrif75/imgcull/releases/latest) and extract the `imgcull` binary onto your `PATH`.
 
 ### Build from source
 
