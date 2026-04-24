@@ -4,6 +4,7 @@ version = "0.2.5"
 edition = "2024"
 description = "AI-powered image culling tool using vision LLMs"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/henrif75/imgcull"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -30,3 +31,8 @@ async-trait = "0.1"
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
