@@ -7,3 +7,4 @@ README_guidelines.md
 *.bak
 GEMINI.md
 .DS_Store
+/docs/ai-firstify-audit.md
