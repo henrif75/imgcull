@@ -1,6 +1,7 @@
 //! Configuration and prompts loading for imgcull.
 
 use anyhow::Result;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -251,29 +252,28 @@ impl Default for Prompts {
     }
 }
 
+/// Deserialize a TOML value of type `T` from `path`, falling back to
+/// `T::default()` when the file does not exist.
+fn load_toml_or_default<T: DeserializeOwned + Default>(path: &Path) -> Result<T> {
+    if path.exists() {
+        let contents = std::fs::read_to_string(path)?;
+        Ok(toml::from_str(&contents)?)
+    } else {
+        Ok(T::default())
+    }
+}
+
 impl Config {
     /// Load configuration from a TOML file, falling back to defaults if the file is missing.
     pub fn load(path: &Path) -> Result<Self> {
-        if path.exists() {
-            let contents = std::fs::read_to_string(path)?;
-            let config: Config = toml::from_str(&contents)?;
-            Ok(config)
-        } else {
-            Ok(Config::default())
-        }
+        load_toml_or_default(path)
     }
 }
 
 impl Prompts {
     /// Load prompts from a TOML file, falling back to defaults if the file is missing.
     pub fn load(path: &Path) -> Result<Self> {
-        if path.exists() {
-            let contents = std::fs::read_to_string(path)?;
-            let prompts: Prompts = toml::from_str(&contents)?;
-            Ok(prompts)
-        } else {
-            Ok(Prompts::default())
-        }
+        load_toml_or_default(path)
     }
 
     /// Render the scoring prompt template, replacing `{{dimensions}}` with

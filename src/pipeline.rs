@@ -22,6 +22,7 @@ use crate::summary::RunSummary;
 use crate::xmp::{XmpSidecar, backup_sidecar, sidecar_for_image};
 
 /// Options that control which pipeline stages run and how output is handled.
+#[derive(Debug, Clone, Copy)]
 pub struct PipelineOptions {
     /// Skip the description stage entirely.
     pub no_description: bool,
@@ -80,13 +81,15 @@ pub async fn run_pipeline(
     // each spawn only bumps a refcount instead of cloning the full String.
     let prompts_rendered: Arc<str> = prompts.render_scoring_prompt(&prompts.guidelines).into();
     let desc_template: Arc<str> = prompts.description.template.clone().into();
-    let score_provider_name: Arc<str> = config.default_settings.scoring_provider.clone().into();
-    let score_model_name: Arc<str> = config
+    // `provider/model` string stamped into every scored sidecar.  Identical for
+    // the whole run, so build it once rather than re-formatting per image.
+    let score_provider_name = &config.default_settings.scoring_provider;
+    let score_model = config
         .providers
-        .get(&config.default_settings.scoring_provider)
-        .map(|p| p.model.clone())
-        .unwrap_or_default()
-        .into();
+        .get(score_provider_name)
+        .map(|p| p.model.as_str())
+        .unwrap_or_default();
+    let provider_info: Arc<str> = format!("{score_provider_name}/{score_model}").into();
 
     let mut handles = Vec::new();
 
@@ -96,15 +99,8 @@ pub async fn run_pipeline(
         let summary = summary.clone();
         let prompts_rendered = prompts_rendered.clone();
         let desc_template = desc_template.clone();
-        let score_provider_name = score_provider_name.clone();
-        let score_model_name = score_model_name.clone();
+        let provider_info = provider_info.clone();
         let pb = pb.clone();
-        let options_no_desc = options.no_description;
-        let options_no_score = options.describe_only;
-        let options_no_rating = options.no_rating || options.describe_only;
-        let options_backup = options.backup;
-        let options_force = options.force;
-        let options_dry_run = options.dry_run;
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
@@ -116,7 +112,7 @@ pub async fn run_pipeline(
 
             pb.set_message(filename.clone());
 
-            if options_dry_run {
+            if options.dry_run {
                 pb.println(format!("  [dry-run] Would process: {filename}"));
                 pb.inc(1);
                 return;
@@ -149,8 +145,13 @@ pub async fn run_pipeline(
                 };
 
             debug!(
-                "{filename}: preprocessed ({}KB base64)",
-                preprocessed.base64.len() / 1024
+                "{filename}: preprocessed ({}KB base64{})",
+                preprocessed.base64.len() / 1024,
+                if preprocessed.was_resized {
+                    ", resized"
+                } else {
+                    ""
+                }
             );
 
             // Read existing sidecar
@@ -170,8 +171,8 @@ pub async fn run_pipeline(
             sidecar.set_original_filename(&filename);
 
             let needs_description =
-                !options_no_desc && (options_force || !sidecar.has_description());
-            let needs_scoring = !options_no_score && (options_force || !sidecar.has_scores());
+                !options.no_description && (options.force || !sidecar.has_description());
+            let needs_scoring = !options.describe_only && (options.force || !sidecar.has_scores());
             let mut had_llm_error = false;
 
             // Description
@@ -194,7 +195,7 @@ pub async fn run_pipeline(
                         had_llm_error = true;
                     }
                 }
-            } else if !options_no_desc && sidecar.has_description() {
+            } else if !options.no_description && sidecar.has_description() {
                 summary
                     .skipped_existing_description
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -211,7 +212,6 @@ pub async fn run_pipeline(
                         scores.clamp();
                         let overall = scores.overall_score();
                         debug!("{filename}: scored {overall:.2} — {scores:?}");
-                        let provider_info = format!("{}/{}", score_provider_name, score_model_name);
                         if let Some(ref critique) = scores.critique {
                             debug!("{filename}: critique = {critique}");
                             sidecar.set_scoring_response(critique);
@@ -224,7 +224,7 @@ pub async fn run_pipeline(
                         sidecar.set_scores(&scores, overall, &provider_info);
 
                         let stars = score_to_stars(overall);
-                        if !options_no_rating {
+                        if !(options.no_rating || options.describe_only) {
                             sidecar.set_rating(stars);
                         }
                         let star_display =
@@ -249,7 +249,7 @@ pub async fn run_pipeline(
 
             // Backup & write — only when something actually changed.
             if sidecar.is_dirty() {
-                if options_backup
+                if options.backup
                     && sidecar_path.exists()
                     && let Err(e) = backup_sidecar(&sidecar_path)
                 {
