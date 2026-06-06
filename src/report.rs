@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::discovery::{discover_images, has_extension};
+use crate::discovery::{has_extension, is_supported};
 use crate::xmp::{XmpSidecar, sidecar_for_image};
 
 /// Output format for the report.
@@ -107,8 +107,11 @@ fn row_from_xmp(xmp_path: &Path) -> Option<ReportRow> {
 /// Discover all XMP sidecar paths from the given paths.
 ///
 /// Finds sidecars in two ways:
-/// 1. Directly — any `.xmp` file found in the given directories or paths.
-/// 2. Via images — for each discovered image, looks for a matching `.xmp` sidecar.
+/// 1. Directly — any `.xmp` file found in the given directories (scanned
+///    recursively) or passed as a path.
+/// 2. Via images — for each image file passed directly, looks for a matching
+///    `.xmp` sidecar.  (Directories need no image pairing: the recursive scan
+///    in step 1 already collects every `.xmp` they contain.)
 ///
 /// Results are deduplicated and sorted.
 fn discover_xmp_files(paths: &[PathBuf]) -> Vec<PathBuf> {
@@ -123,12 +126,16 @@ fn discover_xmp_files(paths: &[PathBuf]) -> Vec<PathBuf> {
         }
     }
 
-    // Also find sidecars via image discovery (for images that have matching .xmp).
-    let images = discover_images(paths);
-    for image_path in &images {
-        let sidecar_path = sidecar_for_image(image_path);
-        if sidecar_path.exists() {
-            xmp_files.insert(sidecar_path);
+    // Pair any image file passed directly on the command line with its `.xmp`
+    // sidecar.  Directories are already fully covered by `scan_dir_for_xmp`
+    // above — it collects every `.xmp` in the tree, a superset of the
+    // image-paired sidecars — so there is no need to re-walk them here.
+    for path in paths {
+        if path.is_file() && is_supported(path) {
+            let sidecar_path = sidecar_for_image(path);
+            if sidecar_path.exists() {
+                xmp_files.insert(sidecar_path);
+            }
         }
     }
 
@@ -182,11 +189,16 @@ fn sort_rows(rows: &mut [ReportRow], order: &SortOrder, ascending: bool) {
 }
 
 /// Truncate a string to `max` characters, appending ".." if truncated.
+///
+/// Operates on `char`s rather than bytes so multi-byte UTF-8 (accented
+/// filenames, CJK text, LLM-generated keywords) cannot land the cut on a
+/// non-char boundary and panic.
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}..", &s[..max.saturating_sub(2)])
+        let keep = max.saturating_sub(2);
+        format!("{}..", s.chars().take(keep).collect::<String>())
     }
 }
 
@@ -360,6 +372,17 @@ mod tests {
     }
 
     #[test]
+    fn test_truncate_multibyte_does_not_panic() {
+        // Cut index would land mid-character if sliced by bytes.
+        assert_eq!(truncate("café résumé naïve", 7), "café ..");
+        // CJK: each char is 3 bytes in UTF-8.
+        assert_eq!(truncate("写真撮影技術論", 5), "写真撮..");
+        // 5 chars / 7 bytes: fits by char count, so it is returned whole even
+        // though its byte length exceeds `max`.
+        assert_eq!(truncate("caféé", 6), "caféé");
+    }
+
+    #[test]
     fn test_row_from_xmp() {
         let tmp = TempDir::new().unwrap();
         let xmp_path = tmp.path().join("photo.xmp");
@@ -405,6 +428,26 @@ mod tests {
 
         let xmp_files = discover_xmp_files(&[tmp.path().to_path_buf()]);
         assert_eq!(xmp_files.len(), 2);
+    }
+
+    #[test]
+    fn test_discover_xmp_pairs_directly_passed_image_file() {
+        let tmp = TempDir::new().unwrap();
+        let image = tmp.path().join("photo.jpg");
+        let sidecar = tmp.path().join("photo.xmp");
+        std::fs::write(&image, b"not really a jpeg").unwrap();
+        let minimal_xmp = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description/>
+  </rdf:RDF>
+</x:xmpmeta>
+"#;
+        std::fs::write(&sidecar, minimal_xmp).unwrap();
+
+        // Passing the image file directly should surface its matching sidecar.
+        let xmp_files = discover_xmp_files(&[image]);
+        assert_eq!(xmp_files, vec![sidecar]);
     }
 
     #[test]

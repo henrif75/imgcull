@@ -3,6 +3,7 @@
 //! Provides utilities for computing sidecar paths, reading and writing XMP
 //! sidecar files, and backing up existing sidecars before modification.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -324,14 +325,19 @@ impl XmpSidecar {
 fn build_imgcull_fields(sidecar: &XmpSidecar) -> String {
     let mut fields = String::new();
 
+    // Writing to a String is infallible, so the `writeln!` results below can
+    // never error — the `.unwrap()`s document that invariant.
+
     // dc:description
     if let Some(ref desc) = sidecar.description {
         let escaped = escape(desc);
         fields.push_str("      <dc:description>\n");
         fields.push_str("        <rdf:Alt>\n");
-        fields.push_str(&format!(
-            "          <rdf:li xml:lang=\"x-default\">{escaped}</rdf:li>\n"
-        ));
+        writeln!(
+            fields,
+            "          <rdf:li xml:lang=\"x-default\">{escaped}</rdf:li>"
+        )
+        .unwrap();
         fields.push_str("        </rdf:Alt>\n");
         fields.push_str("      </dc:description>\n");
     }
@@ -342,7 +348,7 @@ fn build_imgcull_fields(sidecar: &XmpSidecar) -> String {
         fields.push_str("        <rdf:Bag>\n");
         for kw in &sidecar.keywords {
             let escaped = escape(kw);
-            fields.push_str(&format!("          <rdf:li>{escaped}</rdf:li>\n"));
+            writeln!(fields, "          <rdf:li>{escaped}</rdf:li>").unwrap();
         }
         fields.push_str("        </rdf:Bag>\n");
         fields.push_str("      </dc:subject>\n");
@@ -350,53 +356,55 @@ fn build_imgcull_fields(sidecar: &XmpSidecar) -> String {
 
     // imgcull:score
     if let Some(score) = sidecar.overall_score {
-        fields.push_str(&format!(
-            "      <imgcull:score>{score:.2}</imgcull:score>\n"
-        ));
+        writeln!(fields, "      <imgcull:score>{score:.2}</imgcull:score>").unwrap();
     }
 
     // Per-dimension scores
     for (name, val) in &sidecar.dimension_scores {
-        fields.push_str(&format!(
-            "      <imgcull:{name}>{val:.2}</imgcull:{name}>\n"
-        ));
+        writeln!(fields, "      <imgcull:{name}>{val:.2}</imgcull:{name}>").unwrap();
     }
 
     // imgcull:scored_at
     if let Some(ref ts) = sidecar.scored_at {
-        fields.push_str(&format!(
-            "      <imgcull:scored_at>{ts}</imgcull:scored_at>\n"
-        ));
+        writeln!(fields, "      <imgcull:scored_at>{ts}</imgcull:scored_at>").unwrap();
     }
 
     // imgcull:scored_by
     if let Some(ref model) = sidecar.scored_by {
-        fields.push_str(&format!(
-            "      <imgcull:scored_by>{model}</imgcull:scored_by>\n"
-        ));
+        writeln!(
+            fields,
+            "      <imgcull:scored_by>{model}</imgcull:scored_by>"
+        )
+        .unwrap();
     }
 
     // imgcull:dimensions
     if let Some(ref dims) = sidecar.dimensions_list {
-        fields.push_str(&format!(
-            "      <imgcull:dimensions>{dims}</imgcull:dimensions>\n"
-        ));
+        writeln!(
+            fields,
+            "      <imgcull:dimensions>{dims}</imgcull:dimensions>"
+        )
+        .unwrap();
     }
 
     // imgcull:original_filename
     if let Some(ref fname) = sidecar.original_filename {
         let escaped = escape(fname);
-        fields.push_str(&format!(
-            "      <imgcull:original_filename>{escaped}</imgcull:original_filename>\n"
-        ));
+        writeln!(
+            fields,
+            "      <imgcull:original_filename>{escaped}</imgcull:original_filename>"
+        )
+        .unwrap();
     }
 
     // imgcull:scoring_response
     if let Some(ref response) = sidecar.scoring_response {
         let escaped = escape(response);
-        fields.push_str(&format!(
-            "      <imgcull:scoring_response>{escaped}</imgcull:scoring_response>\n"
-        ));
+        writeln!(
+            fields,
+            "      <imgcull:scoring_response>{escaped}</imgcull:scoring_response>"
+        )
+        .unwrap();
     }
 
     fields
