@@ -46,7 +46,7 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 - `llm.rs` — `DescriptionProvider` / `ScoringProvider` traits + 5 provider structs (one per backend, each implementing both traits). Each provider stores a pre-built Rig `Agent` bound to its preamble, so the underlying `reqwest` client and connection pool are reused across every LLM call.
 - `pipeline.rs` — `run_pipeline()` spawns a `tokio::spawn` per image, bounded by `Arc<Semaphore>`. Each task preprocesses (via `spawn_blocking`), calls LLMs with retry, writes XMP.
 - `preprocessing.rs` — JPEG passthrough, RAW preview extraction via `rawler` (17 formats: arw, cr2, cr3, dng, erf, mef, mos, mrw, nef, nrw, orf, pef, raf, rw2, sr2, srw), resize to 2048px max, base64 encode.
-- `discovery.rs` — Walks directories and filters by extension. `SUPPORTED_EXTENSIONS` must stay in sync with `preprocessing::preprocess_image`'s match arms.
+- `discovery.rs` — Walks directories and filters by extension. `SUPPORTED_EXTENSIONS` is the single source of truth: `preprocessing::preprocess_image` treats `jpg`/`jpeg` as JPEG and every other entry as a rawler-handled RAW format.
 - `xmp.rs` — XMP sidecar read/merge/write using string manipulation (not a full XML DOM). Uses `quick-xml` only for validation.
 - `config.rs` — TOML config + prompts loading with defaults. `Config::default()` and `Prompts::default()` provide built-in fallbacks.
 - `scoring.rs` — `ScoringResult` struct with 5 hardcoded dimension fields (`Option<f64>`), an optional `critique` string, and optional `keywords` array. Derives `JsonSchema` for Rig compatibility. The canonical dimension set is exposed as `pub const DIMENSIONS: &[&str]` and consumed by `overall_score()`, `XmpSidecar::set_scores()`, and `Prompts::render_scoring_prompt()`.
@@ -56,9 +56,9 @@ CLI (clap) → File Discovery → Image Preprocessing → [Semaphore gate]
 
 ### Provider abstraction
 
-`LlmClients` holds two `Box<dyn DualProvider>` trait objects (`DualProvider: DescriptionProvider + ScoringProvider`). The `api_key_provider!` macro generates a struct + both trait impls for each API-key provider (Claude, OpenAI, Gemini, DeepSeek). Ollama is manual (different builder). The generated struct stores a pre-built `Agent<CompletionModel>` and exposes a `new(api_key, model, preamble) -> Result<Self>` constructor; call sites in `build_provider()` delegate to it. A single `build_provider()` function matches on provider name strings and returns the boxed trait object. Adding a new provider means: add a struct (or macro invocation), implement both traits, add a match arm in `build_provider()`. DeepSeek is wired up in `build_provider()` but intentionally not in `default_providers()` because DeepSeek has no public vision model — users who want it must add a `[providers.deepseek]` section manually.
+`LlmClients` holds two `Box<dyn DualProvider>` trait objects (`DualProvider: DescriptionProvider + ScoringProvider`). The `api_key_provider!` macro generates a struct + constructor for each API-key provider (Claude, OpenAI, Gemini, DeepSeek) and delegates the two trait impls to the shared `provider_impls!` macro. Ollama defines its struct + constructor manually (different builder) and reuses `provider_impls!`. The generated struct stores a pre-built `Agent<CompletionModel>` and exposes a `new(api_key, model, preamble) -> Result<Self>` constructor; call sites in `build_provider()` delegate to it. A single `build_provider()` function matches on provider name strings and returns the boxed trait object. Adding a new provider means: add a struct (or macro invocation), implement both traits, add a match arm in `build_provider()`. DeepSeek is wired up in `build_provider()` but intentionally not in `default_providers()` because DeepSeek has no public vision model — users who want it must add a `[providers.deepseek]` section manually.
 
-### Rig crate notes (rig-core 0.33)
+### Rig crate notes (rig-core 0.37)
 
 - All providers: `Client::new(key)?` returns `Result<Client>` — must propagate with `?`
 - Anthropic: `rig::providers::anthropic::Client::new(&key)?`

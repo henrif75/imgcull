@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 
 /// Supported image file extensions (lowercase).
 ///
-/// Must stay in sync with the match arms in
-/// [`crate::preprocessing::preprocess_image`].
+/// Single source of truth: [`crate::preprocessing::preprocess_image`] treats
+/// `jpg`/`jpeg` as JPEG and every other entry here as a rawler-handled RAW
+/// format.
 pub const SUPPORTED_EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", // JPEG
     "arw", "cr2", "cr3", "dng", "erf", "mef", "mos", "mrw", "nef", "nrw", "orf", "pef", "raf",

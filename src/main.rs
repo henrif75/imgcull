@@ -101,7 +101,6 @@ async fn run_process(args: cli::ProcessArgs, describe_only: bool) -> Result<()> 
         no_rating: args.no_rating || !config.default_settings.set_rating,
         backup: config.default_settings.backup,
         force: args.force,
-        dry_run: args.dry_run,
         describe_only,
     };
 

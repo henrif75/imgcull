@@ -95,15 +95,44 @@ fn provider_configs_have_correct_defaults() {
 
 #[test]
 fn render_scoring_prompt_replaces_placeholders() {
-    let prompts = Prompts::default();
-    let mut guidelines = std::collections::HashMap::new();
-    guidelines.insert("sharpness".to_string(), "1.0 = tack sharp".to_string());
-    let rendered = prompts.render_scoring_prompt(&guidelines);
+    let prompts = Prompts {
+        guidelines: std::collections::HashMap::from([(
+            "sharpness".to_string(),
+            "1.0 = tack sharp".to_string(),
+        )]),
+        ..Default::default()
+    };
+    let rendered = prompts.render_scoring_prompt();
     // The canonical dimensions list from `scoring::DIMENSIONS` must appear.
     assert!(rendered.contains("sharpness, exposure, composition, subject_clarity, aesthetics"));
     assert!(rendered.contains("- sharpness: 1.0 = tack sharp"));
     assert!(!rendered.contains("{{dimensions}}"));
     assert!(!rendered.contains("{{guidelines}}"));
+}
+
+#[test]
+fn render_scoring_prompt_orders_guidelines_canonically() {
+    let prompts = Prompts::default();
+    let rendered = prompts.render_scoring_prompt();
+    // Guidelines must appear in scoring::DIMENSIONS order so the rendered
+    // prompt is identical across runs (HashMap iteration order is randomised
+    // per process, which breaks reproducibility and prompt caching).
+    let positions: Vec<usize> = [
+        "- sharpness:",
+        "- exposure:",
+        "- composition:",
+        "- subject_clarity:",
+        "- aesthetics:",
+    ]
+    .iter()
+    .map(|needle| rendered.find(needle).expect("guideline line present"))
+    .collect();
+    let mut sorted = positions.clone();
+    sorted.sort_unstable();
+    assert_eq!(
+        positions, sorted,
+        "guidelines must render in canonical dimension order"
+    );
 }
 
 #[test]

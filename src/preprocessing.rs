@@ -14,8 +14,8 @@ use std::path::Path;
 
 /// Maximum pixel dimension (width or height) before an image is resized.
 ///
-/// Images larger than this in either dimension are downscaled using Lanczos3
-/// filtering while preserving the original aspect ratio.
+/// Images larger than this in either dimension are downscaled while
+/// preserving the original aspect ratio.
 const MAX_DIMENSION: u32 = 2048;
 
 /// The result of preprocessing an image for LLM submission.
@@ -58,31 +58,65 @@ pub fn preprocess_image(path: &Path) -> Result<PreprocessedImage> {
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
 
-    let img = match ext.as_str() {
-        "jpg" | "jpeg" => {
-            let bytes =
-                std::fs::read(path).with_context(|| format!("Cannot read {}", path.display()))?;
-            image::load_from_memory(&bytes)
-                .with_context(|| format!("Cannot decode image: {}", path.display()))?
-        }
-        "arw" | "cr2" | "cr3" | "dng" | "erf" | "mef" | "mos" | "mrw" | "nef" | "nrw" | "orf"
-        | "pef" | "raf" | "rw2" | "sr2" | "srw" => {
-            rawler::analyze::extract_preview_pixels(path, &RawDecodeParams::default())
+    match ext.as_str() {
+        "jpg" | "jpeg" => preprocess_jpeg(path),
+        // Everything else in SUPPORTED_EXTENSIONS is a RAW format handled by
+        // rawler — the jpg/jpeg arm above already consumed the only non-RAW
+        // entries, so discovery's list stays the single source of truth.
+        e if crate::discovery::SUPPORTED_EXTENSIONS.contains(&e) => {
+            let img = rawler::analyze::extract_preview_pixels(path, &RawDecodeParams::default())
                 .with_context(|| {
                     format!("Cannot extract preview from RAW file: {}", path.display())
-                })?
+                })?;
+            resize_and_encode(img)
         }
         _ => anyhow::bail!("Unsupported format: {}", path.display()),
-    };
+    }
+}
 
+/// Preprocess a JPEG file, passing the original bytes through untouched when
+/// the image is already within [`MAX_DIMENSION`].
+///
+/// The dimensions are read from the file header alone, so the passthrough
+/// path never pays for a full decode or a lossy re-encode.
+fn preprocess_jpeg(path: &Path) -> Result<PreprocessedImage> {
+    let bytes = std::fs::read(path).with_context(|| format!("Cannot read {}", path.display()))?;
+
+    let reader = image::ImageReader::new(Cursor::new(&bytes))
+        .with_guessed_format()
+        .with_context(|| format!("Cannot read image header: {}", path.display()))?;
+    // Only pass through real JPEG content — a mislabelled file (e.g. PNG bytes
+    // in a `.jpg`) still needs the decode + JPEG re-encode below.
+    let is_jpeg = reader.format() == Some(image::ImageFormat::Jpeg);
+    let (width, height) = reader
+        .into_dimensions()
+        .with_context(|| format!("Cannot decode image: {}", path.display()))?;
+
+    if is_jpeg && width <= MAX_DIMENSION && height <= MAX_DIMENSION {
+        return Ok(PreprocessedImage {
+            base64: BASE64_STANDARD.encode(&bytes),
+            was_resized: false,
+        });
+    }
+
+    let img = image::load_from_memory(&bytes)
+        .with_context(|| format!("Cannot decode image: {}", path.display()))?;
+    resize_and_encode(img)
+}
+
+/// Downscale `img` to fit [`MAX_DIMENSION`] if needed and encode it as a
+/// base64 JPEG.
+fn resize_and_encode(img: image::DynamicImage) -> Result<PreprocessedImage> {
     let (width, height) = img.dimensions();
     let needs_resize = width > MAX_DIMENSION || height > MAX_DIMENSION;
 
+    // CatmullRom keeps enough detail for LLM scoring (including the sharpness
+    // dimension) at a fraction of Lanczos3's cost.
     let final_img = if needs_resize {
         img.resize(
             MAX_DIMENSION,
             MAX_DIMENSION,
-            image::imageops::FilterType::Lanczos3,
+            image::imageops::FilterType::CatmullRom,
         )
     } else {
         img
@@ -92,10 +126,9 @@ pub fn preprocess_image(path: &Path) -> Result<PreprocessedImage> {
     final_img
         .write_to(&mut buf, image::ImageFormat::Jpeg)
         .context("Failed to encode image as JPEG")?;
-    let final_bytes = buf.into_inner();
 
     Ok(PreprocessedImage {
-        base64: BASE64_STANDARD.encode(&final_bytes),
+        base64: BASE64_STANDARD.encode(buf.get_ref()),
         was_resized: needs_resize,
     })
 }

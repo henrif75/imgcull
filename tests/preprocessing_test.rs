@@ -43,6 +43,54 @@ fn test_preprocess_large_jpeg_resizes() {
     );
 }
 
+/// A JPEG already within the 2048px limit must be passed through with its
+/// original bytes — no decode → re-encode round trip (which costs CPU and
+/// loses quality to JPEG re-compression).
+#[test]
+fn test_preprocess_small_jpeg_passes_through_original_bytes() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("gradient.jpg");
+    // Gradient content so a lossy re-encode cannot accidentally reproduce
+    // the original bytes (as a flat single-colour image could).
+    let img = image::ImageBuffer::from_fn(800, 600, |x, y| {
+        image::Rgb([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+    });
+    img.save(&path).unwrap();
+
+    let result = preprocess_image(&path).unwrap();
+    let original = std::fs::read(&path).unwrap();
+    assert_eq!(
+        result.base64,
+        base64::prelude::BASE64_STANDARD.encode(&original),
+        "in-range JPEG should be base64 of the untouched file bytes"
+    );
+    assert!(!result.was_resized);
+}
+
+/// PNG bytes hiding behind a `.jpg` extension must NOT be passed through —
+/// the LLM payload is declared as JPEG, so mislabelled files take the
+/// decode + JPEG re-encode path.
+#[test]
+fn test_preprocess_mislabelled_png_is_reencoded_as_jpeg() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("actually-a-png.jpg");
+    let img = image::ImageBuffer::from_fn(64, 64, |x, y| {
+        image::Rgb([(x * 4) as u8, (y * 4) as u8, 0u8])
+    });
+    img.save_with_format(&path, image::ImageFormat::Png)
+        .unwrap();
+
+    let result = preprocess_image(&path).unwrap();
+    let decoded = base64::prelude::BASE64_STANDARD
+        .decode(&result.base64)
+        .unwrap();
+    assert!(
+        image::guess_format(&decoded).unwrap() == image::ImageFormat::Jpeg,
+        "output must be real JPEG bytes, not passed-through PNG"
+    );
+    assert!(!result.was_resized);
+}
+
 #[test]
 fn test_preprocess_unreadable_file_returns_error() {
     let path = PathBuf::from("/nonexistent/photo.jpg");
