@@ -10,7 +10,9 @@ use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 use tracing::{debug, error, warn};
 
 use crate::config::{Config, Prompts};
@@ -32,8 +34,6 @@ pub struct PipelineOptions {
     pub backup: bool,
     /// Re-process images even if a description or scores already exist.
     pub force: bool,
-    /// Print what would be done without actually writing any files.
-    pub dry_run: bool,
     /// Only write descriptions; skip the scoring stage.
     pub describe_only: bool,
 }
@@ -53,7 +53,7 @@ pub struct PipelineOptions {
 ///
 /// # Errors
 ///
-/// Returns an error if any Tokio task panics (i.e. if `handle.await` fails).
+/// Returns an error if any Tokio task panics (i.e. if joining a task fails).
 /// Per-image errors are logged via `warn!` / `error!` and counted in the
 /// summary rather than propagating.
 pub async fn run_pipeline(
@@ -73,13 +73,11 @@ pub async fn run_pipeline(
     // Route tracing warn/error output above the progress bar.
     attach_progress_bar(pb.clone());
 
-    summary
-        .total
-        .store(images.len(), std::sync::atomic::Ordering::Relaxed);
+    summary.total.store(images.len(), Ordering::Relaxed);
 
     // Compute run-level constants once before the loop.  Arc-wrapped so that
     // each spawn only bumps a refcount instead of cloning the full String.
-    let prompts_rendered: Arc<str> = prompts.render_scoring_prompt(&prompts.guidelines).into();
+    let prompts_rendered: Arc<str> = prompts.render_scoring_prompt().into();
     let desc_template: Arc<str> = prompts.description.template.clone().into();
     // `provider/model` string stamped into every scored sidecar.  Identical for
     // the whole run, so build it once rather than re-formatting per image.
@@ -91,7 +89,7 @@ pub async fn run_pipeline(
         .unwrap_or_default();
     let provider_info: Arc<str> = format!("{score_provider_name}/{score_model}").into();
 
-    let mut handles = Vec::new();
+    let mut tasks = JoinSet::new();
 
     for image_path in images {
         let sem = semaphore.clone();
@@ -102,7 +100,7 @@ pub async fn run_pipeline(
         let provider_info = provider_info.clone();
         let pb = pb.clone();
 
-        let handle = tokio::spawn(async move {
+        tasks.spawn(async move {
             let _permit = sem.acquire().await.unwrap();
             let filename = image_path
                 .file_name()
@@ -111,12 +109,6 @@ pub async fn run_pipeline(
                 .to_string();
 
             pb.set_message(filename.clone());
-
-            if options.dry_run {
-                pb.println(format!("  [dry-run] Would process: {filename}"));
-                pb.inc(1);
-                return;
-            }
 
             // Preprocess on a blocking worker — fs read, RAW decode, resize
             // and JPEG re-encode are all CPU/IO bound and would otherwise
@@ -130,7 +122,7 @@ pub async fn run_pipeline(
                         warn!("Skipping {filename}: {e}");
                         summary
                             .skipped_unreadable
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            .fetch_add(1, Ordering::Relaxed);
                         pb.inc(1);
                         return;
                     }
@@ -138,7 +130,7 @@ pub async fn run_pipeline(
                         error!("Preprocess task panicked for {filename}: {e}");
                         summary
                             .skipped_unreadable
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            .fetch_add(1, Ordering::Relaxed);
                         pb.inc(1);
                         return;
                     }
@@ -188,7 +180,7 @@ pub async fn run_pipeline(
                         sidecar.set_description(desc);
                         summary
                             .described
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            .fetch_add(1, Ordering::Relaxed);
                     }
                     Err(e) => {
                         warn!("Description failed for {filename}: {e:#}");
@@ -198,7 +190,7 @@ pub async fn run_pipeline(
             } else if !options.no_description && sidecar.has_description() {
                 summary
                     .skipped_existing_description
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    .fetch_add(1, Ordering::Relaxed);
             }
 
             // Scoring
@@ -244,7 +236,7 @@ pub async fn run_pipeline(
             if had_llm_error {
                 summary
                     .skipped_llm_error
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    .fetch_add(1, Ordering::Relaxed);
             }
 
             // Backup & write — only when something actually changed.
@@ -265,12 +257,10 @@ pub async fn run_pipeline(
 
             pb.inc(1);
         });
-
-        handles.push(handle);
     }
 
-    for handle in handles {
-        handle.await?;
+    while let Some(res) = tasks.join_next().await {
+        res?;
     }
 
     pb.finish_and_clear();

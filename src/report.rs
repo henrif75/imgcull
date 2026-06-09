@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::discovery::{has_extension, is_supported};
+use crate::scoring::DIMENSIONS;
 use crate::xmp::{XmpSidecar, sidecar_for_image};
 
 /// Output format for the report.
@@ -28,16 +29,14 @@ pub enum SortOrder {
 }
 
 /// One row of report data extracted from an XMP sidecar.
+#[derive(Default)]
 struct ReportRow {
     filename: String,
     xmp_file: String,
     overall_score: Option<f64>,
     rating: Option<u8>,
-    sharpness: Option<f64>,
-    exposure: Option<f64>,
-    composition: Option<f64>,
-    subject_clarity: Option<f64>,
-    aesthetics: Option<f64>,
+    /// Per-dimension scores, aligned with [`DIMENSIONS`].
+    dims: [Option<f64>; DIMENSIONS.len()],
     keywords: String,
     scored_by: Option<String>,
     description: Option<String>,
@@ -70,35 +69,20 @@ fn row_from_xmp(xmp_path: &Path) -> Option<ReportRow> {
         .to_string_lossy()
         .to_string();
 
-    let mut sharpness = None;
-    let mut exposure = None;
-    let mut composition = None;
-    let mut subject_clarity = None;
-    let mut aesthetics = None;
+    let mut dims = [None; DIMENSIONS.len()];
     for (name, val) in sidecar.dimension_scores() {
-        match name.as_str() {
-            "sharpness" => sharpness = Some(*val),
-            "exposure" => exposure = Some(*val),
-            "composition" => composition = Some(*val),
-            "subject_clarity" => subject_clarity = Some(*val),
-            "aesthetics" => aesthetics = Some(*val),
-            _ => {}
+        if let Some(i) = DIMENSIONS.iter().position(|d| *d == name.as_str()) {
+            dims[i] = Some(*val);
         }
     }
-
-    let keywords = sidecar.keywords().join(", ");
 
     Some(ReportRow {
         filename,
         xmp_file,
         overall_score: sidecar.overall_score(),
         rating: sidecar.rating(),
-        sharpness,
-        exposure,
-        composition,
-        subject_clarity,
-        aesthetics,
-        keywords,
+        dims,
+        keywords: sidecar.keywords().join(", "),
         scored_by: sidecar.scored_by().map(String::from),
         description: sidecar.description().map(String::from),
     })
@@ -117,24 +101,21 @@ fn row_from_xmp(xmp_path: &Path) -> Option<ReportRow> {
 fn discover_xmp_files(paths: &[PathBuf]) -> Vec<PathBuf> {
     let mut xmp_files = BTreeSet::new();
 
-    // Scan directories for .xmp files directly.
     for path in paths {
         if path.is_dir() {
+            // The recursive scan collects every `.xmp` in the tree — a
+            // superset of the image-paired sidecars — so directories need no
+            // separate pairing pass.
             scan_dir_for_xmp(path, &mut xmp_files);
-        } else if is_xmp(path) && path.is_file() {
-            xmp_files.insert(path.clone());
-        }
-    }
-
-    // Pair any image file passed directly on the command line with its `.xmp`
-    // sidecar.  Directories are already fully covered by `scan_dir_for_xmp`
-    // above — it collects every `.xmp` in the tree, a superset of the
-    // image-paired sidecars — so there is no need to re-walk them here.
-    for path in paths {
-        if path.is_file() && is_supported(path) {
-            let sidecar_path = sidecar_for_image(path);
-            if sidecar_path.exists() {
-                xmp_files.insert(sidecar_path);
+        } else if path.is_file() {
+            if is_xmp(path) {
+                xmp_files.insert(path.clone());
+            } else if is_supported(path) {
+                // Pair an image passed directly with its sidecar, if any.
+                let sidecar_path = sidecar_for_image(path);
+                if sidecar_path.exists() {
+                    xmp_files.insert(sidecar_path);
+                }
             }
         }
     }
@@ -219,21 +200,18 @@ fn render_table(rows: &[ReportRow]) {
     let formatted: Vec<Vec<String>> = rows
         .iter()
         .map(|r| {
-            vec![
+            let mut cells = vec![
                 truncate(&r.filename, 36),
                 truncate(&r.xmp_file, 36),
                 fmt_score(r.overall_score),
                 r.rating
                     .map(|v| v.to_string())
                     .unwrap_or_else(|| "-".to_string()),
-                fmt_score(r.sharpness),
-                fmt_score(r.exposure),
-                fmt_score(r.composition),
-                fmt_score(r.subject_clarity),
-                fmt_score(r.aesthetics),
-                truncate(&r.keywords, 24),
-                truncate(r.scored_by.as_deref().unwrap_or("-"), 22),
-            ]
+            ];
+            cells.extend(r.dims.iter().map(|d| fmt_score(*d)));
+            cells.push(truncate(&r.keywords, 24));
+            cells.push(truncate(r.scored_by.as_deref().unwrap_or("-"), 22));
+            cells
         })
         .collect();
 
@@ -264,8 +242,9 @@ fn render_table(rows: &[ReportRow]) {
             .iter()
             .enumerate()
             .map(|(i, cell)| {
-                // Right-align numeric columns (Score, Stars, Sharp..Aesth = indices 2-8).
-                if (2..=8).contains(&i) {
+                // Right-align numeric columns: Score, Stars, and the
+                // per-dimension scores that follow them.
+                if (2..4 + DIMENSIONS.len()).contains(&i) {
                     format!("{:>w$}", cell, w = widths[i])
                 } else {
                     format!("{:<w$}", cell, w = widths[i])
@@ -289,27 +268,24 @@ fn csv_escape(s: &str) -> String {
 /// Render CSV output to stdout.
 fn render_csv(rows: &[ReportRow]) {
     println!(
-        "filename,xmp_file,score,rating,sharpness,exposure,composition,subject_clarity,aesthetics,keywords,model,description"
+        "filename,xmp_file,score,rating,{},keywords,model,description",
+        DIMENSIONS.join(",")
     );
 
     for r in rows {
-        println!(
-            "{},{},{},{},{},{},{},{},{},{},{},{}",
+        let mut fields = vec![
             csv_escape(&r.filename),
             csv_escape(&r.xmp_file),
             fmt_score(r.overall_score),
             r.rating
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "-".to_string()),
-            fmt_score(r.sharpness),
-            fmt_score(r.exposure),
-            fmt_score(r.composition),
-            fmt_score(r.subject_clarity),
-            fmt_score(r.aesthetics),
-            csv_escape(&r.keywords),
-            csv_escape(r.scored_by.as_deref().unwrap_or("")),
-            csv_escape(r.description.as_deref().unwrap_or("")),
-        );
+        ];
+        fields.extend(r.dims.iter().map(|d| fmt_score(*d)));
+        fields.push(csv_escape(&r.keywords));
+        fields.push(csv_escape(r.scored_by.as_deref().unwrap_or("")));
+        fields.push(csv_escape(r.description.as_deref().unwrap_or("")));
+        println!("{}", fields.join(","));
     }
 }
 
@@ -404,8 +380,9 @@ mod tests {
         assert_eq!(row.xmp_file, "photo.xmp");
         assert!((row.overall_score.unwrap() - 0.82).abs() < 0.01);
         assert_eq!(row.rating, Some(4));
-        assert!((row.sharpness.unwrap() - 0.90).abs() < 1e-9);
-        assert!((row.exposure.unwrap() - 0.75).abs() < 1e-9);
+        // dims is aligned with DIMENSIONS: [sharpness, exposure, ...].
+        assert!((row.dims[0].unwrap() - 0.90).abs() < 1e-9);
+        assert!((row.dims[1].unwrap() - 0.75).abs() < 1e-9);
         assert_eq!(row.keywords, "portrait, outdoors");
     }
 
@@ -457,29 +434,13 @@ mod tests {
                 filename: "a.jpg".into(),
                 xmp_file: "a.xmp".into(),
                 overall_score: Some(0.5),
-                rating: None,
-                sharpness: None,
-                exposure: None,
-                composition: None,
-                subject_clarity: None,
-                aesthetics: None,
-                keywords: String::new(),
-                scored_by: None,
-                description: None,
+                ..Default::default()
             },
             ReportRow {
                 filename: "b.jpg".into(),
                 xmp_file: "b.xmp".into(),
                 overall_score: Some(0.9),
-                rating: None,
-                sharpness: None,
-                exposure: None,
-                composition: None,
-                subject_clarity: None,
-                aesthetics: None,
-                keywords: String::new(),
-                scored_by: None,
-                description: None,
+                ..Default::default()
             },
         ];
         sort_rows(&mut rows, &SortOrder::Score, false);
@@ -493,30 +454,12 @@ mod tests {
             ReportRow {
                 filename: "zebra.jpg".into(),
                 xmp_file: "zebra.xmp".into(),
-                overall_score: None,
-                rating: None,
-                sharpness: None,
-                exposure: None,
-                composition: None,
-                subject_clarity: None,
-                aesthetics: None,
-                keywords: String::new(),
-                scored_by: None,
-                description: None,
+                ..Default::default()
             },
             ReportRow {
                 filename: "apple.jpg".into(),
                 xmp_file: "apple.xmp".into(),
-                overall_score: None,
-                rating: None,
-                sharpness: None,
-                exposure: None,
-                composition: None,
-                subject_clarity: None,
-                aesthetics: None,
-                keywords: String::new(),
-                scored_by: None,
-                description: None,
+                ..Default::default()
             },
         ];
         sort_rows(&mut rows, &SortOrder::Filename, true);

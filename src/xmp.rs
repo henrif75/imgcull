@@ -469,17 +469,32 @@ fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
 
     // --- Remove existing imgcull:* elements ---
     // We iteratively remove any element whose tag starts with `<imgcull:`.
+    // Every iteration must remove at least the opening tag, otherwise a tag
+    // with no matching close (e.g. self-closing `<imgcull:foo/>`) would make
+    // this loop spin forever.
     while let Some(start) = xml.find("<imgcull:") {
         // Find the tag name to build the matching close tag.
         let tag_start = start + 1; // skip '<'
         let tag_end = xml[tag_start..]
-            .find(['>', ' ', '\n', '\r'])
+            .find(['>', '/', ' ', '\n', '\r'])
             .map(|p| tag_start + p)
             .unwrap_or(xml.len());
-        let tag_name = xml[tag_start..tag_end].to_string();
-        let close = format!("</{tag_name}>");
-        let open_tag = xml[start..tag_end + 1].to_string();
-        remove_element_block(&mut xml, &open_tag, &close);
+        let close = format!("</{}>", &xml[tag_start..tag_end]);
+
+        let Some(open_close) = xml[start..].find('>').map(|p| start + p) else {
+            break; // no `>` at all — malformed beyond repair, stop
+        };
+        let end = if xml[..open_close].ends_with('/') {
+            open_close + 1 // self-closing tag: `<imgcull:foo/>`
+        } else if let Some(rel) = xml[open_close..].find(&close) {
+            open_close + rel + close.len()
+        } else {
+            // Unclosed element: drop the open tag, keep progressing.  Purely
+            // defensive — read-time validation rejects unbalanced XML before
+            // raw_content is ever set.
+            open_close + 1
+        };
+        remove_range_trimmed(&mut xml, start, end);
     }
 
     // --- Ensure required namespace declarations are present ---
@@ -527,29 +542,30 @@ fn ensure_namespace(xml: &mut String, check: &str, decl: &str) {
 }
 
 /// Remove an XML element block identified by its literal open and close tags, in place.
-///
-/// Strips any leading whitespace / newline before the open tag so that the
-/// surrounding indentation is not left dangling.
 fn remove_element_block(xml: &mut String, open: &str, close: &str) {
     if let Some(start) = xml.find(open)
         && let Some(rel_end) = xml[start..].find(close)
     {
-        let end = start + rel_end + close.len();
-        // Also consume a trailing newline if present.
-        let end = if xml[end..].starts_with('\n') {
-            end + 1
-        } else {
-            end
-        };
-        // Also strip the leading whitespace on the same line.
-        let trimmed_start = xml[..start].rfind('\n').map(|p| p + 1).unwrap_or(start);
-        let actual_start = if xml[trimmed_start..start].chars().all(char::is_whitespace) {
-            trimmed_start
-        } else {
-            start
-        };
-        xml.replace_range(actual_start..end, "");
+        remove_range_trimmed(xml, start, start + rel_end + close.len());
     }
+}
+
+/// Remove `xml[start..end]` in place, also consuming a trailing newline and
+/// the leading indentation when the removed range starts its own line, so
+/// that the surrounding whitespace is not left dangling.
+fn remove_range_trimmed(xml: &mut String, start: usize, end: usize) {
+    let end = if xml[end..].starts_with('\n') {
+        end + 1
+    } else {
+        end
+    };
+    let line_start = xml[..start].rfind('\n').map(|p| p + 1).unwrap_or(start);
+    let start = if xml[line_start..start].chars().all(char::is_whitespace) {
+        line_start
+    } else {
+        start
+    };
+    xml.replace_range(start..end, "");
 }
 
 /// Remove an XML attribute `name="value"` from a string in place (including leading

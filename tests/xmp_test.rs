@@ -218,6 +218,41 @@ fn set_original_filename_noop_does_not_dirty() {
     assert!(reread.is_dirty(), "changing original_filename must dirty");
 }
 
+/// A sidecar containing a self-closing `<imgcull:.../>` element (well-formed
+/// XML, so it survives read-time validation — e.g. hand-edited or written by
+/// a third-party tool) must merge without hanging, and the stale element must
+/// be removed.
+#[test]
+fn merge_handles_self_closing_imgcull_element() {
+    let tmp = TempDir::new().unwrap();
+    let xmp_path = tmp.path().join("photo.xmp");
+
+    let existing = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description
+      xmlns:imgcull="http://imgcull.dev/ns/1.0/">
+      <imgcull:score/>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+"#;
+    std::fs::write(&xmp_path, existing).unwrap();
+
+    let mut sidecar = XmpSidecar::read(&xmp_path).expect("should parse");
+    sidecar.set_description("fresh description");
+    sidecar
+        .write(&xmp_path)
+        .expect("should write without hanging");
+
+    let result = std::fs::read_to_string(&xmp_path).unwrap();
+    assert!(
+        !result.contains("<imgcull:score/>"),
+        "stale self-closing imgcull element should be removed"
+    );
+    assert!(result.contains("fresh description"));
+}
+
 /// Writing a sidecar that was read from an existing file with third-party
 /// metadata (e.g. `tiff:Make`) must preserve that metadata in the output.
 #[test]

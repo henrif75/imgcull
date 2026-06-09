@@ -6,12 +6,21 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// Score statistics that are updated together under one lock.
+#[derive(Default)]
+struct ScoreStats {
+    /// Running sum of all recorded scores, used to compute the average.
+    sum: f64,
+    /// The highest-scoring image seen so far: `(filename, score)`.
+    best: Option<(String, f64)>,
+}
+
 /// Accumulates counts and statistics for a single imgcull pipeline run.
 ///
 /// All numeric counters use [`AtomicUsize`] so they can be incremented from
-/// concurrent Tokio tasks without additional synchronisation.  The `best` score
-/// and running `score_sum` are protected by a [`Mutex`] because they require a
-/// read-modify-write that spans multiple fields.
+/// concurrent Tokio tasks without additional synchronisation.  The score
+/// statistics live behind a single [`Mutex`] because recording a score is a
+/// read-modify-write that spans both fields.
 pub struct RunSummary {
     /// Total number of images submitted to the pipeline.
     pub total: AtomicUsize,
@@ -25,10 +34,8 @@ pub struct RunSummary {
     pub skipped_llm_error: AtomicUsize,
     /// Number of images skipped because the file could not be read.
     pub skipped_unreadable: AtomicUsize,
-    /// The highest-scoring image seen so far: `(filename, score)`.
-    pub best: Mutex<Option<(String, f64)>>,
-    /// Running sum of all recorded scores, used to compute the average.
-    pub score_sum: Mutex<f64>,
+    /// Running score sum and best image.
+    stats: Mutex<ScoreStats>,
 }
 
 impl RunSummary {
@@ -41,8 +48,7 @@ impl RunSummary {
             skipped_existing_description: AtomicUsize::new(0),
             skipped_llm_error: AtomicUsize::new(0),
             skipped_unreadable: AtomicUsize::new(0),
-            best: Mutex::new(None),
-            score_sum: Mutex::new(0.0),
+            stats: Mutex::new(ScoreStats::default()),
         }
     }
 
@@ -52,11 +58,10 @@ impl RunSummary {
     /// updates `best` if `score` exceeds the current best.
     pub fn record_score(&self, filename: &str, score: f64) {
         self.scored.fetch_add(1, Ordering::Relaxed);
-        let mut sum = self.score_sum.lock().unwrap();
-        *sum += score;
-        let mut best = self.best.lock().unwrap();
-        if best.as_ref().is_none_or(|(_, s)| score > *s) {
-            *best = Some((filename.to_string(), score));
+        let mut stats = self.stats.lock().unwrap();
+        stats.sum += score;
+        if stats.best.as_ref().is_none_or(|(_, s)| score > *s) {
+            stats.best = Some((filename.to_string(), score));
         }
     }
 
@@ -74,16 +79,16 @@ impl RunSummary {
         let skipped = skip_llm + skip_unread;
         let processed = total - skipped;
 
+        let stats = self.stats.lock().unwrap();
         let avg = if scored > 0 {
-            *self.score_sum.lock().unwrap() / scored as f64
+            stats.sum / scored as f64
         } else {
             0.0
         };
-        let best = self.best.lock().unwrap();
 
         eprintln!("\nimgcull: {processed}/{total} images processed");
         if scored > 0
-            && let Some((name, score)) = best.as_ref()
+            && let Some((name, score)) = stats.best.as_ref()
         {
             eprintln!("  ✓ {scored} scored (avg: {avg:.2}, best: {name} {score:.2})");
         }

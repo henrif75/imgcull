@@ -278,14 +278,29 @@ impl Prompts {
 
     /// Render the scoring prompt template, replacing `{{dimensions}}` with
     /// the canonical [`crate::scoring::DIMENSIONS`] list and `{{guidelines}}`
-    /// with the configured per-dimension guidelines.
-    pub fn render_scoring_prompt(&self, guidelines: &HashMap<String, String>) -> String {
+    /// with this struct's per-dimension guidelines.
+    pub fn render_scoring_prompt(&self) -> String {
         let dims_text = crate::scoring::DIMENSIONS.join(", ");
-        let guide_text: String = guidelines
+        // Render guideline lines in canonical dimension order (extra
+        // user-defined keys follow, sorted) so the prompt is byte-identical
+        // across runs — HashMap iteration order is randomised per process,
+        // which would break reproducibility and provider-side prompt caching.
+        let mut lines: Vec<String> = crate::scoring::DIMENSIONS
             .iter()
-            .map(|(k, v)| format!("- {k}: {v}"))
-            .collect::<Vec<_>>()
-            .join("\n");
+            .filter_map(|d| self.guidelines.get(*d).map(|v| format!("- {d}: {v}")))
+            .collect();
+        let mut extras: Vec<&String> = self
+            .guidelines
+            .keys()
+            .filter(|k| !crate::scoring::DIMENSIONS.contains(&k.as_str()))
+            .collect();
+        extras.sort();
+        lines.extend(
+            extras
+                .iter()
+                .map(|k| format!("- {k}: {}", self.guidelines[*k])),
+        );
+        let guide_text = lines.join("\n");
         self.scoring
             .template
             .replace("{{dimensions}}", &dims_text)

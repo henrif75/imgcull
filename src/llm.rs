@@ -312,28 +312,10 @@ async fn run_agent_prompt(
 // manual for Ollama (different client construction).
 // ----------------------------------------------------------------
 
-/// Generate a provider struct with both `DescriptionProvider` and `ScoringProvider`
-/// impls for an API-key-based Rig provider.
-///
-/// The generated struct stores a pre-built [`Agent`] bound to its preamble, so
-/// the underlying `reqwest` client (and its connection pool) is constructed
-/// once per `LlmClients` rather than rebuilt on every LLM call.
-macro_rules! api_key_provider {
-    ($struct_name:ident, $client_type:ty, $label:expr) => {
-        struct $struct_name {
-            agent: Agent<<$client_type as CompletionClient>::CompletionModel>,
-        }
-
-        impl $struct_name {
-            fn new(api_key: &str, model: &str, preamble: &str) -> Result<Self> {
-                let agent = <$client_type>::new(api_key)?
-                    .agent(model)
-                    .preamble(preamble)
-                    .build();
-                Ok(Self { agent })
-            }
-        }
-
+/// Generate `DescriptionProvider` and `ScoringProvider` impls for a provider
+/// struct that stores its pre-built Rig agent in an `agent` field.
+macro_rules! provider_impls {
+    ($struct_name:ident, $label:expr) => {
         #[async_trait::async_trait]
         impl DescriptionProvider for $struct_name {
             async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
@@ -360,6 +342,32 @@ macro_rules! api_key_provider {
                 .and_then(|r: String| parse_scoring_result(&r))
             }
         }
+    };
+}
+
+/// Generate a provider struct with both `DescriptionProvider` and `ScoringProvider`
+/// impls for an API-key-based Rig provider.
+///
+/// The generated struct stores a pre-built [`Agent`] bound to its preamble, so
+/// the underlying `reqwest` client (and its connection pool) is constructed
+/// once per `LlmClients` rather than rebuilt on every LLM call.
+macro_rules! api_key_provider {
+    ($struct_name:ident, $client_type:ty, $label:expr) => {
+        struct $struct_name {
+            agent: Agent<<$client_type as CompletionClient>::CompletionModel>,
+        }
+
+        impl $struct_name {
+            fn new(api_key: &str, model: &str, preamble: &str) -> Result<Self> {
+                let agent = <$client_type>::new(api_key)?
+                    .agent(model)
+                    .preamble(preamble)
+                    .build();
+                Ok(Self { agent })
+            }
+        }
+
+        provider_impls!($struct_name, $label);
     };
 }
 
@@ -390,32 +398,7 @@ impl OllamaProvider {
     }
 }
 
-#[async_trait::async_trait]
-impl DescriptionProvider for OllamaProvider {
-    async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-        run_agent_prompt(
-            &self.agent,
-            image_base64,
-            prompt,
-            "Ollama description request failed",
-        )
-        .await
-    }
-}
-
-#[async_trait::async_trait]
-impl ScoringProvider for OllamaProvider {
-    async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-        run_agent_prompt(
-            &self.agent,
-            image_base64,
-            prompt,
-            "Ollama scoring request failed",
-        )
-        .await
-        .and_then(|r| parse_scoring_result(&r))
-    }
-}
+provider_impls!(OllamaProvider, "Ollama");
 
 // ----------------------------------------------------------------
 // Builder function
