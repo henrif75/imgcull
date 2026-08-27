@@ -42,11 +42,13 @@ pub struct PipelineOptions {
 ///
 /// For each image in `images` the pipeline:
 /// 1. Acquires a semaphore slot to limit concurrent LLM requests.
-/// 2. Preprocesses the image (decode, resize, base64-encode).
-/// 3. Optionally calls the description provider and stores the result.
-/// 4. Optionally calls the scoring provider, clamps scores, and stores the result.
-/// 5. Backs up the existing XMP sidecar if `options.backup` is set.
-/// 6. Writes the updated XMP sidecar to disk.
+/// 2. Reads the existing XMP sidecar to decide which LLM stages must run.
+/// 3. Preprocesses the image (decode, resize, base64-encode) — skipped
+///    entirely when no LLM stage needs to run.
+/// 4. Optionally calls the description provider and stores the result.
+/// 5. Optionally calls the scoring provider, clamps scores, and stores the result.
+/// 6. Backs up the existing XMP sidecar if `options.backup` is set.
+/// 7. Writes the updated XMP sidecar to disk.
 ///
 /// A progress bar is displayed during processing and a [`RunSummary`] is
 /// printed to stderr when all tasks have completed.
@@ -110,43 +112,10 @@ pub async fn run_pipeline(
 
             pb.set_message(filename.clone());
 
-            // Preprocess on a blocking worker — fs read, RAW decode, resize
-            // and JPEG re-encode are all CPU/IO bound and would otherwise
-            // stall tokio workers.
-            let preprocess_path = image_path.clone();
-            let preprocessed =
-                match tokio::task::spawn_blocking(move || preprocess_image(&preprocess_path)).await
-                {
-                    Ok(Ok(p)) => p,
-                    Ok(Err(e)) => {
-                        warn!("Skipping {filename}: {e}");
-                        summary
-                            .skipped_unreadable
-                            .fetch_add(1, Ordering::Relaxed);
-                        pb.inc(1);
-                        return;
-                    }
-                    Err(e) => {
-                        error!("Preprocess task panicked for {filename}: {e}");
-                        summary
-                            .skipped_unreadable
-                            .fetch_add(1, Ordering::Relaxed);
-                        pb.inc(1);
-                        return;
-                    }
-                };
-
-            debug!(
-                "{filename}: preprocessed ({}KB base64{})",
-                preprocessed.base64.len() / 1024,
-                if preprocessed.was_resized {
-                    ", resized"
-                } else {
-                    ""
-                }
-            );
-
-            // Read existing sidecar
+            // Read the existing sidecar first: when it already carries a
+            // description and scores (and --force is off), no LLM stage runs,
+            // so the expensive preprocess (RAW decode + resize + re-encode)
+            // can be skipped entirely.
             let sidecar_path = sidecar_for_image(&image_path);
             let mut sidecar = if sidecar_path.exists() {
                 match XmpSidecar::read(&sidecar_path) {
@@ -167,8 +136,47 @@ pub async fn run_pipeline(
             let needs_scoring = !options.describe_only && (options.force || !sidecar.has_scores());
             let mut had_llm_error = false;
 
+            let preprocessed = if needs_description || needs_scoring {
+                // Preprocess on a blocking worker — fs read, RAW decode,
+                // resize and JPEG re-encode are all CPU/IO bound and would
+                // otherwise stall tokio workers.
+                let preprocess_path = image_path.clone();
+                match tokio::task::spawn_blocking(move || preprocess_image(&preprocess_path)).await
+                {
+                    Ok(Ok(p)) => Some(p),
+                    Ok(Err(e)) => {
+                        warn!("Skipping {filename}: {e}");
+                        summary
+                            .skipped_unreadable
+                            .fetch_add(1, Ordering::Relaxed);
+                        pb.inc(1);
+                        return;
+                    }
+                    Err(e) => {
+                        error!("Preprocess task panicked for {filename}: {e}");
+                        summary
+                            .skipped_unreadable
+                            .fetch_add(1, Ordering::Relaxed);
+                        pb.inc(1);
+                        return;
+                    }
+                }
+            } else {
+                None
+            };
+
+            if let Some(ref p) = preprocessed {
+                debug!(
+                    "{filename}: preprocessed ({}KB base64{})",
+                    p.base64.len() / 1024,
+                    if p.was_resized { ", resized" } else { "" }
+                );
+            }
+
             // Description
-            if needs_description {
+            if let Some(ref preprocessed) = preprocessed
+                && needs_description
+            {
                 let desc_result = retry_with_backoff(2, || async {
                     clients.describe(&preprocessed.base64, &desc_template).await
                 })
@@ -194,7 +202,9 @@ pub async fn run_pipeline(
             }
 
             // Scoring
-            if needs_scoring {
+            if let Some(ref preprocessed) = preprocessed
+                && needs_scoring
+            {
                 let score_result = retry_with_backoff(3, || async {
                     clients.score(&preprocessed.base64, &prompts_rendered).await
                 })

@@ -112,27 +112,26 @@ impl XmpSidecar {
 
         // Extract imgcull:scored_at.
         if let Some(val) = extract_element(&content, "imgcull:scored_at") {
-            sidecar.scored_at = Some(val);
+            sidecar.scored_at = Some(val.to_owned());
         }
 
         // Extract imgcull:scored_by.
         if let Some(val) = extract_element(&content, "imgcull:scored_by") {
-            sidecar.scored_by = Some(val);
+            sidecar.scored_by = Some(val.to_owned());
         }
 
         // Extract imgcull:original_filename.
         if let Some(val) = extract_element(&content, "imgcull:original_filename") {
-            sidecar.original_filename = Some(val);
+            sidecar.original_filename = Some(val.to_owned());
         }
 
         // Extract imgcull:scoring_response.
         if let Some(val) = extract_element(&content, "imgcull:scoring_response") {
-            sidecar.scoring_response = Some(val);
+            sidecar.scoring_response = Some(val.to_owned());
         }
 
         // Extract imgcull:dimensions.
         if let Some(val) = extract_element(&content, "imgcull:dimensions") {
-            // Parse individual dimension scores before moving val.
             for dim_name in val.split(',') {
                 let dim_name = dim_name.trim();
                 if let Some(score_str) = extract_element(&content, &format!("imgcull:{dim_name}"))
@@ -141,7 +140,7 @@ impl XmpSidecar {
                     sidecar.dimension_scores.push((dim_name.to_string(), v));
                 }
             }
-            sidecar.dimensions_list = Some(val);
+            sidecar.dimensions_list = Some(val.to_owned());
         }
 
         // Extract dc:subject keywords.
@@ -471,8 +470,12 @@ fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
     // We iteratively remove any element whose tag starts with `<imgcull:`.
     // Every iteration must remove at least the opening tag, otherwise a tag
     // with no matching close (e.g. self-closing `<imgcull:foo/>`) would make
-    // this loop spin forever.
-    while let Some(start) = xml.find("<imgcull:") {
+    // this loop spin forever.  The prefix before each removal contains no
+    // further matches, so the search resumes from the removal point instead
+    // of rescanning the document from the top.
+    let mut search_from = 0;
+    while let Some(rel_start) = xml[search_from..].find("<imgcull:") {
+        let start = search_from + rel_start;
         // Find the tag name to build the matching close tag.
         let tag_start = start + 1; // skip '<'
         let tag_end = xml[tag_start..]
@@ -494,7 +497,7 @@ fn merge_into_existing(base: &str, sidecar: &XmpSidecar) -> String {
             // raw_content is ever set.
             open_close + 1
         };
-        remove_range_trimmed(&mut xml, start, end);
+        search_from = remove_range_trimmed(&mut xml, start, end);
     }
 
     // --- Ensure required namespace declarations are present ---
@@ -553,7 +556,11 @@ fn remove_element_block(xml: &mut String, open: &str, close: &str) {
 /// Remove `xml[start..end]` in place, also consuming a trailing newline and
 /// the leading indentation when the removed range starts its own line, so
 /// that the surrounding whitespace is not left dangling.
-fn remove_range_trimmed(xml: &mut String, start: usize, end: usize) {
+///
+/// Returns the index where the removal actually began (after whitespace
+/// trimming), which is where the text that followed `end` now starts —
+/// callers scanning for repeated matches can resume searching from it.
+fn remove_range_trimmed(xml: &mut String, start: usize, end: usize) -> usize {
     let end = if xml[end..].starts_with('\n') {
         end + 1
     } else {
@@ -566,6 +573,7 @@ fn remove_range_trimmed(xml: &mut String, start: usize, end: usize) {
         start
     };
     xml.replace_range(start..end, "");
+    start
 }
 
 /// Remove an XML attribute `name="value"` from a string in place (including leading
@@ -594,11 +602,15 @@ pub fn backup_sidecar(path: &Path) -> Result<()> {
 }
 
 /// Extract text content between `<tag>` and `</tag>`.
-fn extract_element(content: &str, tag: &str) -> Option<String> {
+///
+/// Returns a borrowed slice of `content`; callers that need ownership convert
+/// explicitly, so the many extractions in [`XmpSidecar::read`] that only
+/// parse or inspect the text allocate nothing.
+fn extract_element<'a>(content: &'a str, tag: &str) -> Option<&'a str> {
     let open = format!("<{tag}>");
     let close = format!("</{tag}>");
     let start = content.find(&open)?;
     let text_start = start + open.len();
     let end = content[text_start..].find(&close)?;
-    Some(content[text_start..text_start + end].to_string())
+    Some(&content[text_start..text_start + end])
 }
