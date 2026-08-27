@@ -253,6 +253,58 @@ fn merge_handles_self_closing_imgcull_element() {
     assert!(result.contains("fresh description"));
 }
 
+/// Re-scoring a fully-populated sidecar must replace every stale
+/// `imgcull:*` element exactly once — the removal loop resumes its scan
+/// from the removal point, and a mix of self-closing and normal elements
+/// must not derail it.
+#[test]
+fn merge_removes_all_stale_imgcull_elements() {
+    let tmp = TempDir::new().unwrap();
+    let xmp_path = tmp.path().join("photo.xmp");
+
+    let existing = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description
+      xmlns:imgcull="http://imgcull.dev/ns/1.0/">
+      <imgcull:score>0.10</imgcull:score>
+      <imgcull:sharpness/>
+      <imgcull:exposure>0.20</imgcull:exposure>
+      <imgcull:scored_by>old/model</imgcull:scored_by>
+      <imgcull:dimensions>sharpness,exposure</imgcull:dimensions>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+"#;
+    std::fs::write(&xmp_path, existing).unwrap();
+
+    let mut sidecar = XmpSidecar::read(&xmp_path).expect("should parse");
+    let scores = ScoringResult {
+        sharpness: Some(0.91),
+        exposure: Some(0.82),
+        ..Default::default()
+    };
+    sidecar.set_scores(&scores, 0.87, "new/model");
+    sidecar.write(&xmp_path).expect("should write");
+
+    let result = std::fs::read_to_string(&xmp_path).unwrap();
+    assert!(
+        !result.contains("<imgcull:score>0.10</imgcull:score>"),
+        "stale score should be gone"
+    );
+    assert!(!result.contains("<imgcull:sharpness/>"));
+    assert!(!result.contains("old/model"));
+    assert_eq!(
+        result.matches("<imgcull:score>").count(),
+        1,
+        "exactly one fresh score element"
+    );
+    assert_eq!(result.matches("<imgcull:sharpness>").count(), 1);
+    assert_eq!(result.matches("<imgcull:scored_by>").count(), 1);
+    assert!(result.contains("<imgcull:score>0.87</imgcull:score>"));
+    assert!(result.contains("new/model"));
+}
+
 /// Writing a sidecar that was read from an existing file with third-party
 /// metadata (e.g. `tiff:Make`) must preserve that metadata in the output.
 #[test]

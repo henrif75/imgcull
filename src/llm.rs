@@ -278,6 +278,51 @@ mod tests {
     }
 
     #[test]
+    fn test_build_image_message_shape() {
+        let msg = build_image_message("aGVsbG8=", "Describe this");
+        let Message::User { content } = msg else {
+            panic!("expected a user message");
+        };
+        assert_eq!(content.len(), 2);
+        assert!(matches!(content[0], UserContent::Image(_)));
+        match &content[1] {
+            UserContent::Text(t) => assert_eq!(t.text, "Describe this"),
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_extract_response_text_single_block() {
+        let choice = vec![AssistantContent::text("hello")];
+        assert_eq!(extract_response_text(choice).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_extract_response_text_joins_multiple_blocks() {
+        let choice = vec![
+            AssistantContent::text("first"),
+            AssistantContent::text("second"),
+        ];
+        assert_eq!(extract_response_text(choice).unwrap(), "first\nsecond");
+    }
+
+    #[test]
+    fn test_extract_response_text_skips_reasoning_blocks() {
+        use rig::completion::message::Reasoning;
+        let choice = vec![
+            AssistantContent::Reasoning(Reasoning::new("thinking...")),
+            AssistantContent::text("the answer"),
+        ];
+        assert_eq!(extract_response_text(choice).unwrap(), "the answer");
+    }
+
+    #[test]
+    fn test_extract_response_text_empty_is_error() {
+        let err = extract_response_text(vec![]).unwrap_err();
+        assert!(err.to_string().contains("no text content"));
+    }
+
+    #[test]
     fn test_parse_json_with_escaped_quote_in_string() {
         // Backslash-escaped quotes inside a string must not flip the
         // in-string state prematurely.

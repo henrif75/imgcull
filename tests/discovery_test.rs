@@ -85,6 +85,49 @@ fn is_supported_checks_extension() {
 }
 
 #[test]
+fn recurses_into_nested_directories() {
+    let dir = TempDir::new().unwrap();
+    let nested = dir.path().join("level1").join("level2");
+    std::fs::create_dir_all(&nested).unwrap();
+    touch(&dir, "top.jpg");
+    File::create(nested.join("deep.nef")).unwrap();
+
+    let found = discover_images(&[dir.path().to_path_buf()]);
+    assert_eq!(found.len(), 2);
+    assert!(found.iter().any(|p| p.ends_with("top.jpg")));
+    assert!(found.iter().any(|p| p.ends_with("deep.nef")));
+}
+
+#[cfg(unix)]
+#[test]
+fn follows_symlinked_directories() {
+    // The scan trusts the readdir file type for regular entries and falls
+    // back to the link-following Path checks for symlinks — a symlinked
+    // subdirectory must still be scanned.
+    let real = TempDir::new().unwrap();
+    touch(&real, "linked.jpg");
+    let root = TempDir::new().unwrap();
+    std::os::unix::fs::symlink(real.path(), root.path().join("alias")).unwrap();
+
+    let found = discover_images(&[root.path().to_path_buf()]);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].ends_with("linked.jpg"));
+}
+
+#[cfg(unix)]
+#[test]
+fn discovers_symlinked_files() {
+    let real = TempDir::new().unwrap();
+    let target = touch(&real, "target.jpg");
+    let root = TempDir::new().unwrap();
+    std::os::unix::fs::symlink(&target, root.path().join("link.jpg")).unwrap();
+
+    let found = discover_images(&[root.path().to_path_buf()]);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].ends_with("link.jpg"));
+}
+
+#[test]
 fn results_are_sorted() {
     let dir = TempDir::new().unwrap();
     touch(&dir, "c.jpg");
