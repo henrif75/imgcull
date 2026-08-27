@@ -76,10 +76,24 @@ fn scan_dir(dir: &Path, results: &mut Vec<PathBuf>) {
         };
 
         let path = entry.path();
-        if path.is_dir() {
-            scan_dir(&path, results);
-        } else if is_supported(&path) {
-            results.push(path);
+        // `DirEntry::file_type` comes straight from the readdir entry on most
+        // platforms, avoiding a stat syscall per file.  Symlinks (and the rare
+        // error) fall back to the stat-based `Path::is_dir`, which follows
+        // links like the original behaviour.
+        match entry.file_type() {
+            Ok(ft) if ft.is_dir() => scan_dir(&path, results),
+            Ok(ft) if !ft.is_symlink() => {
+                if is_supported(&path) {
+                    results.push(path);
+                }
+            }
+            _ => {
+                if path.is_dir() {
+                    scan_dir(&path, results);
+                } else if is_supported(&path) {
+                    results.push(path);
+                }
+            }
         }
     }
 }

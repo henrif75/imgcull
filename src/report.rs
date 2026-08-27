@@ -145,10 +145,22 @@ fn scan_dir_for_xmp(dir: &Path, results: &mut BTreeSet<PathBuf>) {
         };
 
         let path = entry.path();
-        if path.is_dir() {
-            scan_dir_for_xmp(&path, results);
-        } else if is_xmp(&path) {
-            results.insert(path);
+        // Same syscall-avoidance as `discovery::scan_dir`: trust the readdir
+        // file type for regular entries, stat only symlinks.
+        match entry.file_type() {
+            Ok(ft) if ft.is_dir() => scan_dir_for_xmp(&path, results),
+            Ok(ft) if !ft.is_symlink() => {
+                if is_xmp(&path) {
+                    results.insert(path);
+                }
+            }
+            _ => {
+                if path.is_dir() {
+                    scan_dir_for_xmp(&path, results);
+                } else if is_xmp(&path) {
+                    results.insert(path);
+                }
+            }
         }
     }
 }

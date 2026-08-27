@@ -6,11 +6,9 @@
 //! DeepSeek, Ollama) has a concrete struct implementing both traits.
 
 use anyhow::{Context, Result};
-use rig::OneOrMany;
-use rig::agent::Agent;
 use rig::client::{CompletionClient, Nothing};
-use rig::completion::message::{ImageMediaType, UserContent};
-use rig::completion::{Message, Prompt};
+use rig::completion::message::{AssistantContent, ImageMediaType, UserContent};
+use rig::completion::{CompletionModel, Message};
 
 use crate::config::{Config, Prompts, ProviderConfig};
 use crate::scoring::ScoringResult;
@@ -127,13 +125,12 @@ fn resolve_api_key(provider_config: &ProviderConfig) -> Result<String> {
 ///
 /// The image is passed as base64-encoded JPEG data.
 fn build_image_message(image_base64: &str, prompt: &str) -> Message {
-    let mut content = OneOrMany::one(UserContent::image_base64(
-        image_base64,
-        Some(ImageMediaType::JPEG),
-        None,
-    ));
-    content.push(UserContent::text(prompt));
-    Message::User { content }
+    Message::User {
+        content: vec![
+            UserContent::image_base64(image_base64, Some(ImageMediaType::JPEG), None),
+            UserContent::text(prompt),
+        ],
+    }
 }
 
 /// Extract a JSON object from `text` using brace-depth counting.
@@ -281,6 +278,51 @@ mod tests {
     }
 
     #[test]
+    fn test_build_image_message_shape() {
+        let msg = build_image_message("aGVsbG8=", "Describe this");
+        let Message::User { content } = msg else {
+            panic!("expected a user message");
+        };
+        assert_eq!(content.len(), 2);
+        assert!(matches!(content[0], UserContent::Image(_)));
+        match &content[1] {
+            UserContent::Text(t) => assert_eq!(t.text, "Describe this"),
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_extract_response_text_single_block() {
+        let choice = vec![AssistantContent::text("hello")];
+        assert_eq!(extract_response_text(choice).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_extract_response_text_joins_multiple_blocks() {
+        let choice = vec![
+            AssistantContent::text("first"),
+            AssistantContent::text("second"),
+        ];
+        assert_eq!(extract_response_text(choice).unwrap(), "first\nsecond");
+    }
+
+    #[test]
+    fn test_extract_response_text_skips_reasoning_blocks() {
+        use rig::completion::message::Reasoning;
+        let choice = vec![
+            AssistantContent::Reasoning(Reasoning::new("thinking...")),
+            AssistantContent::text("the answer"),
+        ];
+        assert_eq!(extract_response_text(choice).unwrap(), "the answer");
+    }
+
+    #[test]
+    fn test_extract_response_text_empty_is_error() {
+        let err = extract_response_text(vec![]).unwrap_err();
+        assert!(err.to_string().contains("no text content"));
+    }
+
+    #[test]
     fn test_parse_json_with_escaped_quote_in_string() {
         // Backslash-escaped quotes inside a string must not flip the
         // in-string state prematurely.
@@ -294,17 +336,47 @@ mod tests {
 // Shared prompt helper
 // ----------------------------------------------------------------
 
-/// Send a multimodal image + text message to any Rig agent and return the
-/// response string.  All provider impls delegate here to avoid repeating the
-/// `build_image_message` / `.prompt()` / `.context()` boilerplate.
-async fn run_agent_prompt(
-    agent: &impl Prompt,
+/// Send a multimodal image + text message to any Rig completion model and
+/// return the response text.  All provider impls delegate here to avoid
+/// repeating the `build_image_message` / request-builder boilerplate.
+///
+/// Rig 0.41 removed the `Agent` abstraction from `rig-core`; a one-shot
+/// preamble + prompt request is now expressed directly against
+/// [`CompletionModel`] via `completion_request()`.
+async fn run_model_prompt<M: CompletionModel + Clone>(
+    model: &M,
+    preamble: &str,
     image_base64: &str,
     user_prompt: &str,
     error_context: &'static str,
 ) -> Result<String> {
     let msg = build_image_message(image_base64, user_prompt);
-    agent.prompt(msg).await.context(error_context)
+    let response = model
+        .completion_request(msg)
+        .preamble(preamble.to_owned())
+        .send()
+        .await
+        .context(error_context)?;
+    extract_response_text(response.choice).context(error_context)
+}
+
+/// Pull the assistant's text out of a completion response.
+///
+/// Joins every `Text` block with newlines (reasoning models may emit
+/// reasoning blocks before the text; those are skipped).  Errors if the
+/// response contains no text at all.
+fn extract_response_text(choice: Vec<AssistantContent>) -> Result<String> {
+    let texts: Vec<String> = choice
+        .into_iter()
+        .filter_map(|content| match content {
+            AssistantContent::Text(t) => Some(t.text),
+            _ => None,
+        })
+        .collect();
+    if texts.is_empty() {
+        anyhow::bail!("LLM response contained no text content");
+    }
+    Ok(texts.join("\n"))
 }
 
 // ----------------------------------------------------------------
@@ -313,14 +385,16 @@ async fn run_agent_prompt(
 // ----------------------------------------------------------------
 
 /// Generate `DescriptionProvider` and `ScoringProvider` impls for a provider
-/// struct that stores its pre-built Rig agent in an `agent` field.
+/// struct that stores its pre-built Rig completion model in a `model` field
+/// and its system preamble in a `preamble` field.
 macro_rules! provider_impls {
     ($struct_name:ident, $label:expr) => {
         #[async_trait::async_trait]
         impl DescriptionProvider for $struct_name {
             async fn describe(&self, image_base64: &str, prompt: &str) -> Result<String> {
-                run_agent_prompt(
-                    &self.agent,
+                run_model_prompt(
+                    &self.model,
+                    &self.preamble,
                     image_base64,
                     prompt,
                     concat!($label, " description request failed"),
@@ -332,8 +406,9 @@ macro_rules! provider_impls {
         #[async_trait::async_trait]
         impl ScoringProvider for $struct_name {
             async fn score(&self, image_base64: &str, prompt: &str) -> Result<ScoringResult> {
-                run_agent_prompt(
-                    &self.agent,
+                run_model_prompt(
+                    &self.model,
+                    &self.preamble,
                     image_base64,
                     prompt,
                     concat!($label, " scoring request failed"),
@@ -348,22 +423,23 @@ macro_rules! provider_impls {
 /// Generate a provider struct with both `DescriptionProvider` and `ScoringProvider`
 /// impls for an API-key-based Rig provider.
 ///
-/// The generated struct stores a pre-built [`Agent`] bound to its preamble, so
-/// the underlying `reqwest` client (and its connection pool) is constructed
-/// once per `LlmClients` rather than rebuilt on every LLM call.
+/// The generated struct stores a pre-built [`CompletionModel`] (which holds the
+/// provider client), so the underlying `reqwest` client and connection pool are
+/// constructed once per `LlmClients` rather than rebuilt on every LLM call.
 macro_rules! api_key_provider {
     ($struct_name:ident, $client_type:ty, $label:expr) => {
         struct $struct_name {
-            agent: Agent<<$client_type as CompletionClient>::CompletionModel>,
+            model: <$client_type as CompletionClient>::CompletionModel,
+            preamble: String,
         }
 
         impl $struct_name {
             fn new(api_key: &str, model: &str, preamble: &str) -> Result<Self> {
-                let agent = <$client_type>::new(api_key)?
-                    .agent(model)
-                    .preamble(preamble)
-                    .build();
-                Ok(Self { agent })
+                let client = <$client_type>::new(api_key)?;
+                Ok(Self {
+                    model: client.completion_model(model),
+                    preamble: preamble.to_owned(),
+                })
             }
         }
 
@@ -382,19 +458,20 @@ api_key_provider!(
 
 /// Ollama uses a builder pattern with `Nothing` instead of an API key.
 struct OllamaProvider {
-    agent: Agent<<rig::providers::ollama::Client as CompletionClient>::CompletionModel>,
+    model: <rig::providers::ollama::Client as CompletionClient>::CompletionModel,
+    preamble: String,
 }
 
 impl OllamaProvider {
     fn new(base_url: &str, model: &str, preamble: &str) -> Result<Self> {
-        let agent = rig::providers::ollama::Client::builder()
+        let client = rig::providers::ollama::Client::builder()
             .api_key(Nothing)
             .base_url(base_url)
-            .build()?
-            .agent(model)
-            .preamble(preamble)
-            .build();
-        Ok(Self { agent })
+            .build()?;
+        Ok(Self {
+            model: client.completion_model(model),
+            preamble: preamble.to_owned(),
+        })
     }
 }
 
